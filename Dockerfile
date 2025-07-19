@@ -27,7 +27,7 @@ RUN go mod download
 COPY backend/ ./
 
 # 静态编译后端（使用SQLite兼容性标签）
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC=musl-gcc go build \
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
     -tags "sqlite_omit_load_extension" \
     -ldflags="-w -s -extldflags '-static'" \
     -o main .
