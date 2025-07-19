@@ -3,9 +3,9 @@ FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app/web
 
-# 复制package文件并安装依赖
+# 复制package文件并安装所有依赖（包括开发依赖）
 COPY web/package*.json ./
-RUN npm ci --only=production --silent
+RUN npm ci --silent
 
 # 复制前端源代码并构建
 COPY web/ ./
