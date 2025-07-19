@@ -13,7 +13,20 @@
 
 ## 🚀 快速开始
 
+### docker run
 
+```
+docker run -d \
+  --name x-ui-traffic-panel \
+  -p 37022:37022 \
+  -e LISTEN_PORT=37022 \
+  -e DATABASE_PATH=/app/data/xui_traffic.db \
+  -e X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} \
+  -e DEBUG_MODE=${DEBUG_MODE:-false} \
+  -e LOG_LEVEL=${LOG_LEVEL:-info} \
+  --restart unless-stopped \
+  sanqi37/x-ui-panel
+```
 ### docker compose 部署
 
 ```
