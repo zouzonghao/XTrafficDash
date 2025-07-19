@@ -12,12 +12,12 @@ COPY web/ ./
 RUN npm run build
 
 # 构建阶段 - 后端
-FROM golang:1.21 AS backend-builder
+FROM golang:1.21-alpine AS backend-builder
 
 WORKDIR /app
 
 # 安装系统依赖
-RUN apt-get update && apt-get install -y gcc libc6-dev libsqlite3-dev
+RUN apk add --no-cache build-base musl-dev sqlite-dev
 
 # 复制Go模块文件
 COPY backend/go.mod backend/go.sum ./
@@ -26,16 +26,17 @@ RUN go mod download
 # 复制后端源代码
 COPY backend/ ./
 
-# 构建后端
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
-    -ldflags="-w -s" \
+# 静态编译后端（使用SQLite兼容性标签）
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC=musl-gcc go build \
+    -tags "sqlite_omit_load_extension" \
+    -ldflags="-w -s -extldflags '-static'" \
     -o main .
 
 # 最终运行镜像
 FROM alpine:3.18
 
-# 安装运行时依赖
-RUN apk --no-cache add ca-certificates sqlite tzdata
+# 安装运行时依赖（静态编译后不需要sqlite）
+RUN apk --no-cache add ca-certificates tzdata
 
 # 创建非root用户
 RUN addgroup -g 1001 -S appgroup && \
