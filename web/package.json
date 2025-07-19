@@ -11,12 +11,12 @@
     "axios": "^1.6.0",
     "chart.js": "^4.4.0",
     "pinia": "^2.1.0",
-    "vue": "^3.3.0",
+    "vue": "^3.4.0",
     "vue-chartjs": "^5.2.0",
     "vue-router": "^4.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.0",
-    "vite": "^7.0.5"
+    "@vitejs/plugin-vue": "^5.0.0",
+    "vite": "^5.0.0"
   }
 }

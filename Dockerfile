@@ -1,5 +1,5 @@
 # 构建阶段 - 前端
-FROM node:18-alpine AS frontend-builder
+FROM node:18.19-alpine AS frontend-builder
 
 WORKDIR /app/web
 
