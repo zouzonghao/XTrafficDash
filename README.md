@@ -32,8 +32,7 @@ services:
       - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} # 
       - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-    volumes:
-      - ./data:/app/data
+
 ```
 
 - 修改 `X_UI_PASSWORD` ，前端 web 密码，不修改则默认为 admin123
