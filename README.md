@@ -7,6 +7,44 @@
 
 一个现代化的X-UI流量统计面板，使用Vue3 + Go构建，支持多服务器流量监控和可视化。
 
+
+
+
+
+## 🚀 快速开始
+
+
+### docker compose 部署
+
+```
+version: '3.8'
+
+services:
+  x-ui-traffic:
+    image: sanqi37/x-ui-panel 
+    container_name: x-ui-traffic-panel
+    restart: unless-stopped
+    ports:
+      - "37022:37022"
+    environment:
+      - LISTEN_PORT=37022
+      - DATABASE_PATH=/app/data/xui_traffic.db
+      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} # 不设置则为 admin123
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./data:/app/data
+```
+
+###  3x-ui 接入（需要较新版本）
+-  -> 面板设置 
+-   -> 常规 
+-   -> 外部流量 
+- -> 外部流量通知URL 
+- -> `http://111.111.111.111:37022/api/traffic`
+
+- 改为自己服务器地址
+
 ## 🛠️ 技术栈
 
 ### 后端
@@ -58,39 +96,9 @@ x-ui-panel/
 └── README.md           # 项目说明文档
 ```
 
-## 📋 系统要求
+## 🛠️ 开发相关
 
-- **Go**: 1.21 或更高版本
-- **Node.js**: 18 或更高版本
-- **Docker**: 20.10 或更高版本（可选）
-- **内存**: 至少 512MB RAM
-- **存储**: 至少 100MB 可用空间
-
-## 🚀 快速开始
-
-### docker compose 部署
-
-```
-version: '3.8'
-
-services:
-  x-ui-traffic:
-    image: sanqi37/x-ui-panel 
-    container_name: x-ui-traffic-panel
-    restart: unless-stopped
-    ports:
-      - "37022:37022"
-    environment:
-      - LISTEN_PORT=37022
-      - DATABASE_PATH=/app/data/xui_traffic.db
-      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}
-      - DEBUG_MODE=${DEBUG_MODE:-false}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    volumes:
-      - ./data:/app/data
-
-```
-### Docker自己编译部署（推荐）
+### Docker自己编译部署
 
 ```bash
 # 1. 克隆项目

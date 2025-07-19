@@ -125,8 +125,8 @@ func main() {
 	setupRoutes(r)
 
 	// 启动服务器
-	addr := fmt.Sprintf(":%d", config.ListenPort)
-	logger.Infof("服务器启动在端口 %d", config.ListenPort)
+	addr := fmt.Sprintf("0.0.0.0:%d", config.ListenPort)
+	logger.Infof("服务器启动在地址 %s", addr)
 
 	if err := r.Run(addr); err != nil {
 		logger.Fatalf("服务器启动失败: %v", err)
@@ -155,8 +155,18 @@ func setupRoutes(r *gin.Engine) {
 	r.Static("/assets", "/app/web/dist/assets")
 	r.StaticFile("/", "/app/web/dist/index.html")
 
+	// 添加调试路由
+	r.GET("/debug", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "Debug endpoint working",
+			"time":    time.Now(),
+			"path":    c.Request.URL.Path,
+		})
+	})
+
 	// 处理所有其他静态文件请求
 	r.NoRoute(func(c *gin.Context) {
+		logger.Infof("NoRoute: %s", c.Request.URL.Path)
 		// 如果不是API请求，返回index.html（用于SPA路由）
 		if !strings.HasPrefix(c.Request.URL.Path, "/api") {
 			c.File("/app/web/dist/index.html")

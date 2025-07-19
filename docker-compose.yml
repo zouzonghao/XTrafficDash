@@ -12,11 +12,9 @@ services:
     environment:
       - LISTEN_PORT=37022
       - DATABASE_PATH=/app/data/xui_traffic.db
-      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}
+      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}  # 如果不设置，默认是admin123
       - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-    volumes:
-      - xui_traffic_data:/app/data
     networks:
       - xui_network
     healthcheck:
@@ -25,14 +23,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.25'
+
 
 volumes:
   xui_traffic_data:
