@@ -29,12 +29,14 @@ services:
     environment:
       - LISTEN_PORT=37022
       - DATABASE_PATH=/app/data/xui_traffic.db
-      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} # 不设置则为 admin123
+      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} # 
       - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ./data:/app/data
 ```
+
+- 修改 `X_UI_PASSWORD` ，前端 web 密码，不修改则默认为 admin123
 
 ###  3x-ui 接入（需要较新版本）
 -  -> 面板设置 
