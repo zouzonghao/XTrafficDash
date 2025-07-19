@@ -50,7 +50,8 @@ COPY --from=backend-builder /app/main .
 
 # 创建数据目录并设置权限
 RUN mkdir -p /app/data && \
-    chown -R appuser:appgroup /app
+    chown -R appuser:appgroup /app && \
+    chmod +x /app/main
 
 # 切换到非root用户
 USER appuser
@@ -59,8 +60,8 @@ USER appuser
 ENV DATABASE_PATH=/app/data/xui_traffic.db
 ENV X_UI_PASSWORD=admin123
 ENV LISTEN_PORT=37022
-ENV DEBUG_MODE=false
-ENV LOG_LEVEL=info
+ENV DEBUG_MODE=true
+ENV LOG_LEVEL=debug
 
 # 暴露端口
 EXPOSE 37022

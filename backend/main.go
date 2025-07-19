@@ -152,8 +152,18 @@ func setupRoutes(r *gin.Engine) {
 	}
 
 	// 静态文件服务（用于前端）
-	r.Static("/static", "./web/dist")
-	r.StaticFile("/", "./web/dist/index.html")
+	r.Static("/assets", "/app/web/dist/assets")
+	r.StaticFile("/", "/app/web/dist/index.html")
+
+	// 处理所有其他静态文件请求
+	r.NoRoute(func(c *gin.Context) {
+		// 如果不是API请求，返回index.html（用于SPA路由）
+		if !strings.HasPrefix(c.Request.URL.Path, "/api") {
+			c.File("/app/web/dist/index.html")
+		} else {
+			c.JSON(404, gin.H{"error": "API endpoint not found"})
+		}
+	})
 }
 
 // CORS中间件

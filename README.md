@@ -68,7 +68,29 @@ x-ui-panel/
 
 ## 🚀 快速开始
 
-### Docker部署（推荐）
+### docker compose 部署
+
+```
+version: '3.8'
+
+services:
+  x-ui-traffic:
+    image: sanqi37/x-ui-panel 
+    container_name: x-ui-traffic-panel
+    restart: unless-stopped
+    ports:
+      - "37022:37022"
+    environment:
+      - LISTEN_PORT=37022
+      - DATABASE_PATH=/app/data/xui_traffic.db
+      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./data:/app/data
+
+```
+### Docker自己编译部署（推荐）
 
 ```bash
 # 1. 克隆项目
