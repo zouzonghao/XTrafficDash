@@ -44,7 +44,11 @@ jobs:
             # 生成 major.minor 标签（如 v1.0.0 -> 1.0）
             type=semver,pattern={{major}}.{{minor}}
 
-      # 步骤 4: 构建并推送到 Docker Hub
+      # 步骤 4: 设置 Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 步骤 5: 构建并推送到 Docker Hub
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
