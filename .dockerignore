@@ -1,0 +1,87 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+CHANGELOG.md
+*.md
+
+# Development files
+.env
+.env.local
+.env.*.local
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js (for frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+test_*.sh
+*.test.js
+*.spec.js
+coverage/
+*_test.sh
+test_*.go
+*_test.go
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Database files (will be created in container)
+*.db
+*.sqlite
+*.sqlite3
+
+# Config files that might be overridden
+configs/
+
+# Debug and development files
+debug/
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Binary files
+x-ui-panel
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Scripts (except deployment scripts)
+scripts/
+!scripts/docker-deploy.sh
+!scripts/start.sh
+
+# Logs
+*.log
+logs/ 

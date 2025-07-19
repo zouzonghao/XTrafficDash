@@ -1,0 +1,81 @@
+# 编译产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+x-ui-panel
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# 前端构建产物
+web/dist/
+web/node_modules/
+web/.vite/
+
+# 环境变量文件
+.env
+configs/.env
+
+# 日志文件
+*.log
+logs/
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+temp/
+tmp/
+
+# 备份文件
+*.bak
+*.backup
+*.old
+
+# 测试覆盖率
+coverage/
+*.cover
+
+# 测试文件
+test_*.sh
+*_test.sh
+test_*.go
+*_test.go
+
+# 调试文件
+debug/
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Go相关
+go.work
+
+# 脚本文件（保留部署脚本）
+scripts/
+!scripts/docker-deploy.sh
+!scripts/start.sh 

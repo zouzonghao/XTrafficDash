@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  x-ui-panel:
+    build: 
+      context: ..
+      dockerfile: Dockerfile
+    container_name: x-ui-panel
+    ports:
+      - "37022:37022"
+    environment:
+      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}
+      - DATABASE_PATH=/app/data/xui_traffic.db
+      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LISTEN_PORT=37022
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:37022/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s 

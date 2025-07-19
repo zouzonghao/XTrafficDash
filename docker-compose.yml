@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  x-ui-traffic:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: x-ui-traffic-panel
+    restart: unless-stopped
+    ports:
+      - "37022:37022"
+    environment:
+      - LISTEN_PORT=37022
+      - DATABASE_PATH=/app/data/xui_traffic.db
+      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - xui_traffic_data:/app/data
+    networks:
+      - xui_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:37022/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+volumes:
+  xui_traffic_data:
+    driver: local
+
+networks:
+  xui_network:
+    driver: bridge 
