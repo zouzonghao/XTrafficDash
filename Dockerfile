@@ -12,12 +12,12 @@ COPY web/ ./
 RUN npm run build
 
 # 构建阶段 - 后端
-FROM golang:1.21-alpine AS backend-builder
+FROM golang:1.21 AS backend-builder
 
 WORKDIR /app
 
 # 安装系统依赖
-RUN apk add --no-cache gcc musl-dev sqlite-dev
+RUN apt-get update && apt-get install -y gcc libc6-dev libsqlite3-dev
 
 # 复制Go模块文件
 COPY backend/go.mod backend/go.sum ./
@@ -26,9 +26,8 @@ RUN go mod download
 # 复制后端源代码
 COPY backend/ ./
 
-# 构建后端（优化构建参数）
+# 构建后端
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
-    -a -installsuffix cgo \
     -ldflags="-w -s" \
     -o main .
 
