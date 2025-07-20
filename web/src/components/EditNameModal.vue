@@ -29,7 +29,7 @@
           <button class="btn btn-secondary" @click="handleClose">
             取消
           </button>
-          <button class="btn btn-primary" @click="handleSave" :disabled="!editingValue.trim()">
+          <button class="btn btn-primary" @click="handleSave">
             确认
           </button>
         </div>
@@ -89,10 +89,9 @@ watch(() => props.value, (newVal) => {
 
 const handleSave = () => {
   const trimmedValue = editingValue.value.trim()
-  if (trimmedValue) {
-    emit('save', trimmedValue)
-    emit('update:visible', false)
-  }
+  // 允许保存空值，这样可以清空自定义名称
+  emit('save', trimmedValue)
+  emit('update:visible', false)
 }
 
 const handleClose = () => {

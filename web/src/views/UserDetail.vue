@@ -19,13 +19,14 @@
     </div>
 
     <div class="detail-container" v-if="userDetail">
+      <div class="detail-header">
+        <div class="detail-title">用户信息</div>
+        <button class="refresh-button" @click="refreshUserDetail">
+          刷新数据
+        </button>
+      </div>
+
       <div class="user-info">
-        <div class="detail-header">
-          <div class="detail-title">用户信息</div>
-          <button class="refresh-button" @click="refreshUserDetail">
-            刷新数据
-          </button>
-        </div>
         <div class="info-grid">
           <div class="info-item">
             <div class="info-label">服务IP</div>
@@ -56,29 +57,27 @@
       </div>
 
       <div class="chart-section">
+        <div class="chart-header">
+          <div class="section-title">历史流量趋势</div>
+          <div class="chart-controls">
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '7d' }"
+              @click="switchChartPeriod('7d')"
+            >
+              7天
+            </button>
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '30d' }"
+              @click="switchChartPeriod('30d')"
+            >
+              30天
+            </button>
+          </div>
+        </div>
         <div class="chart-container">
-          <div class="chart-header">
-            <div class="section-title">历史流量趋势</div>
-            <div class="chart-controls">
-              <button 
-                class="chart-btn" 
-                :class="{ active: chartPeriod === '7d' }"
-                @click="switchChartPeriod('7d')"
-              >
-                7天
-              </button>
-              <button 
-                class="chart-btn" 
-                :class="{ active: chartPeriod === '30d' }"
-                @click="switchChartPeriod('30d')"
-              >
-                30天
-              </button>
-            </div>
-          </div>
-          <div class="chart-content">
-            <canvas id="user-chart"></canvas>
-          </div>
+          <canvas id="user-chart"></canvas>
         </div>
       </div>
 
@@ -87,10 +86,30 @@
           <div class="section-title">历史流量数据</div>
           <div class="history-table">
           <div class="table-header">
-            <div class="header-cell date-col">日期</div>
-            <div class="header-cell traffic-col">上传流量</div>
-            <div class="header-cell traffic-col">下载流量</div>
-            <div class="header-cell traffic-col">总流量</div>
+            <div class="header-cell date-col sortable" @click="sortBy('date')">
+              日期
+              <span class="sort-icon" v-if="sortField === 'date'">
+                {{ sortOrder === 'asc' ? '↑' : '↓' }}
+              </span>
+            </div>
+            <div class="header-cell traffic-col sortable" @click="sortBy('daily_up')">
+              上传流量
+              <span class="sort-icon" v-if="sortField === 'daily_up'">
+                {{ sortOrder === 'asc' ? '↑' : '↓' }}
+              </span>
+            </div>
+            <div class="header-cell traffic-col sortable" @click="sortBy('daily_down')">
+              下载流量
+              <span class="sort-icon" v-if="sortField === 'daily_down'">
+                {{ sortOrder === 'asc' ? '↑' : '↓' }}
+              </span>
+            </div>
+            <div class="header-cell traffic-col sortable" @click="sortBy('total_daily')">
+              总流量
+              <span class="sort-icon" v-if="sortField === 'total_daily'">
+                {{ sortOrder === 'asc' ? '↑' : '↓' }}
+              </span>
+            </div>
           </div>
           <div v-for="item in paginatedHistory" :key="item.date" class="table-row">
             <div class="table-cell date-col">{{ formatDate(item.date) }}</div>
@@ -120,7 +139,7 @@
           </button>
           <span class="pagination-info">
             第 {{ currentHistoryPage }} 页，共 {{ totalHistoryPages }} 页
-            (共 {{ userDetail.history.length }} 条记录)
+            (共 {{ sortedHistory.length }} 条记录)
           </span>
           <button 
             class="pagination-btn" 
@@ -133,6 +152,13 @@
         </div>
       </div>
 
+      <!-- 下载历史数据按钮 -->
+      <div class="download-section">
+        <button class="download-button" @click="downloadHistoryData">
+          📥 下载历史数据 (CSV)
+        </button>
+        <p class="download-hint">下载当前用户的所有历史流量数据，包含格式化的流量信息</p>
+      </div>
 
     </div>
   </div>
@@ -164,9 +190,13 @@ const servicesStore = useServicesStore()
 
 const userDetail = ref(null)
 const currentHistoryPage = ref(1)
-const historyPageSize = 20
+const historyPageSize = 10
 let userChart = null
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
+
+// 排序相关状态
+const sortField = ref('date')
+const sortOrder = ref('desc')
 
 // 弹窗相关状态
 const showEditModal = ref(false)
@@ -256,12 +286,6 @@ const createUserChart = async () => {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        layout: {
-          padding: {
-            top: 10,
-            bottom: 10
-          }
-        },
         plugins: {
           legend: {
             display: true,
@@ -340,23 +364,45 @@ const backToDetail = () => {
   router.push(`/detail/${route.params.serviceId}`)
 }
 
-// 分页后的历史数据
-const paginatedHistory = computed(() => {
+// 排序后的历史数据
+const sortedHistory = computed(() => {
   if (!userDetail.value || !userDetail.value.history) {
     return []
   }
   
+  const history = [...userDetail.value.history]
+  
+  history.sort((a, b) => {
+    let aValue, bValue
+    
+    if (sortField.value === 'date') {
+      aValue = new Date(a.date)
+      bValue = new Date(b.date)
+    } else {
+      aValue = a[sortField.value] || 0
+      bValue = b[sortField.value] || 0
+    }
+    
+    if (sortOrder.value === 'asc') {
+      return aValue > bValue ? 1 : -1
+    } else {
+      return aValue < bValue ? 1 : -1
+    }
+  })
+  
+  return history
+})
+
+// 分页后的历史数据
+const paginatedHistory = computed(() => {
   const start = (currentHistoryPage.value - 1) * historyPageSize
   const end = start + historyPageSize
-  return userDetail.value.history.slice(start, end)
+  return sortedHistory.value.slice(start, end)
 })
 
 // 总页数
 const totalHistoryPages = computed(() => {
-  if (!userDetail.value || !userDetail.value.history) {
-    return 0
-  }
-  return Math.ceil(userDetail.value.history.length / historyPageSize)
+  return Math.ceil(sortedHistory.value.length / historyPageSize)
 })
 
 const viewPortDetail = (serviceId, tag) => {
@@ -367,9 +413,49 @@ const changeHistoryPage = (page) => {
   currentHistoryPage.value = page
 }
 
+// 排序功能
+const sortBy = (field) => {
+  if (sortField.value === field) {
+    // 如果点击的是当前排序字段，则切换排序顺序
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    // 如果点击的是新字段，则设置为该字段，默认降序
+    sortField.value = field
+    sortOrder.value = 'desc'
+  }
+  // 重置到第一页
+  currentHistoryPage.value = 1
+}
+
+// 下载历史数据
+const downloadHistoryData = async () => {
+  try {
+    const response = await servicesAPI.downloadUserHistory(route.params.serviceId, route.params.email)
+    
+    // 创建下载链接
+    const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    
+    link.setAttribute('href', url)
+    link.setAttribute('download', `用户历史数据_${userDetail.value?.user_info?.custom_name || userDetail.value?.user_info?.email}_${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('下载历史数据失败:', error)
+    alert('下载失败: ' + (error.response?.data?.error || error.message))
+  }
+}
+
 // 编辑用户名称
 const startEditUserName = () => {
-  currentEditingValue.value = userDetail.value?.user_info?.custom_name || userDetail.value?.user_info?.email
+  // 如果custom_name为空或null，则显示空字符串，让用户可以输入新名称
+  // 如果custom_name有值，则显示当前的自定义名称
+  currentEditingValue.value = userDetail.value?.user_info?.custom_name || ''
   showEditModal.value = true
 }
 
@@ -410,19 +496,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-info {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-  margin-bottom: 25px;
-}
-
 .info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
-  margin-top: 16px;
+  margin-bottom: 25px;
 }
 
 .info-item {
@@ -452,8 +530,12 @@ onUnmounted(() => {
 .section-title {
   font-size: 1.1rem;
   font-weight: 600;
-  margin-bottom: 12px;
+  margin-bottom: 20px;
   color: #495057;
+}
+
+.history-container .section-title {
+  margin-bottom: 24px;
 }
 
 .history-container {
@@ -494,9 +576,39 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+.header-cell.date-col.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.header-cell.date-col.sortable:hover {
+  background: rgba(52, 152, 219, 0.1);
+  border-radius: 4px;
+}
+
 .header-cell.traffic-col {
   justify-content: flex-end;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+.header-cell.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.header-cell.sortable:hover {
+  background: rgba(52, 152, 219, 0.1);
+  border-radius: 4px;
+}
+
+.sort-icon {
+  margin-left: 4px;
+  font-weight: bold;
+  color: #3498db;
 }
 
 .table-row {
@@ -611,15 +723,11 @@ onUnmounted(() => {
 
 /* 图表相关样式 */
 .chart-section {
-  margin-top: 25px;
-  margin-bottom: 25px;
-}
-
-.chart-container {
   background: white;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  margin-top: 25px;
 }
 
 .chart-header {
@@ -629,41 +737,82 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 
+.section-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #2c3e50;
+  margin: 0;
+}
+
 .chart-controls {
   display: flex;
   gap: 8px;
 }
 
 .chart-btn {
-  background: #f8f9fa;
-  color: #6c757d;
-  border: 1px solid #dee2e6;
   padding: 6px 12px;
-  border-radius: 4px;
+  border: 1px solid #e1e8ed;
+  background: white;
+  color: #2c3e50;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 14px;
+  font-weight: 500;
   transition: all 0.2s ease;
 }
 
 .chart-btn:hover {
-  background: #e9ecef;
-  border-color: #adb5bd;
+  background: #f8f9fa;
+  border-color: #3498db;
 }
 
 .chart-btn.active {
-  background: #007bff;
+  background: #3498db;
   color: white;
-  border-color: #007bff;
+  border-color: #3498db;
 }
 
-.chart-content {
-  height: 300px;
+.chart-container {
+  height: 400px;
   position: relative;
-  width: 100%;
 }
 
-.chart-content canvas {
-  width: 100% !important;
-  height: 100% !important;
+/* 下载按钮样式 */
+.download-section {
+  margin-top: 30px;
+  text-align: center;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.download-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.download-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.download-button:active {
+  transform: translateY(0);
+}
+
+.download-hint {
+  margin-top: 8px;
+  color: #6c757d;
+  font-size: 14px;
+  margin-bottom: 0;
 }
 </style> 

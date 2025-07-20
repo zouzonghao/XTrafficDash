@@ -88,6 +88,12 @@ func OpenDatabase(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("打开数据库失败: %v", err)
 	}
 
+	// 配置数据库连接池
+	db.SetMaxOpenConns(25)                 // 最大连接数
+	db.SetMaxIdleConns(10)                 // 最大空闲连接数
+	db.SetConnMaxLifetime(5 * time.Minute) // 连接最大生命周期
+	db.SetConnMaxIdleTime(3 * time.Minute) // 空闲连接最大生命周期
+
 	// 测试连接
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("数据库连接测试失败: %v", err)
@@ -96,6 +102,20 @@ func OpenDatabase(dbPath string) (*Database, error) {
 	// 设置时区为本地时间
 	if _, err := db.Exec("PRAGMA timezone = 'local'"); err != nil {
 		return nil, fmt.Errorf("设置时区失败: %v", err)
+	}
+
+	// 优化SQLite性能
+	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		return nil, fmt.Errorf("设置WAL模式失败: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA synchronous = NORMAL"); err != nil {
+		return nil, fmt.Errorf("设置同步模式失败: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA cache_size = 10000"); err != nil {
+		return nil, fmt.Errorf("设置缓存大小失败: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA temp_store = MEMORY"); err != nil {
+		return nil, fmt.Errorf("设置临时存储失败: %v", err)
 	}
 
 	// 初始化数据库表

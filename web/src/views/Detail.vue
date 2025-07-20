@@ -26,6 +26,32 @@
         </button>
       </div>
 
+
+      <div class="chart-section">
+        <div class="chart-header">
+          <div class="section-title">历史流量趋势</div>
+          <div class="chart-controls">
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '7d' }"
+              @click="switchChartPeriod('7d')"
+            >
+              7天
+            </button>
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '30d' }"
+              @click="switchChartPeriod('30d')"
+            >
+              30天
+            </button>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="detail-chart"></canvas>
+        </div>
+      </div>
+
       <div class="traffic-tables">
         <div class="traffic-table">
           <div class="table-title">入站今日流量</div>
@@ -44,7 +70,7 @@
                   <button 
                     class="edit-icon" 
                     @click.stop="startEditInbound(inbound)"
-                    title="编辑端口名称"
+                    title="编辑入站名称"
                   >
                     ✏️
                   </button>
@@ -102,30 +128,8 @@
         </div>
       </div>
 
-      <div class="chart-section">
-        <div class="chart-header">
-          <div class="section-title">历史流量趋势</div>
-          <div class="chart-controls">
-            <button 
-              class="chart-btn" 
-              :class="{ active: chartPeriod === '7d' }"
-              @click="switchChartPeriod('7d')"
-            >
-              7天
-            </button>
-            <button 
-              class="chart-btn" 
-              :class="{ active: chartPeriod === '30d' }"
-              @click="switchChartPeriod('30d')"
-            >
-              30天
-            </button>
-          </div>
-        </div>
-        <div class="chart-container">
-          <canvas id="detail-chart"></canvas>
-        </div>
-      </div>
+      
+      
     </div>
   </div>
   
@@ -140,13 +144,13 @@
     @close="closeServiceModal"
   />
   
-  <!-- 编辑端口名称弹窗 -->
+  <!-- 编辑入站名称弹窗 -->
   <EditNameModal
     v-model:visible="showInboundModal"
     :value="currentEditingValue"
-    title="编辑端口名称"
-    label="端口名称"
-    placeholder="请输入端口名称"
+    title="编辑入站名称"
+    label="入站名称"
+    placeholder="请输入入站名称"
     @save="saveInboundName"
     @close="closeInboundModal"
   />
@@ -219,7 +223,7 @@ const saveInboundName = async (newName) => {
       alert('保存失败: ' + response.data.error)
     }
   } catch (error) {
-    console.error('保存端口名称失败:', error)
+    console.error('保存入站失败:', error)
     alert('保存失败: ' + error.message)
   }
 }
@@ -536,6 +540,7 @@ onUnmounted(() => {
   padding: 20px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
   margin-top: 25px;
+  margin-bottom: 25px;
 }
 
 .chart-header {

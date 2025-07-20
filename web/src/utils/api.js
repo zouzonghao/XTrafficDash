@@ -3,9 +3,7 @@ import axios from 'axios'
 // 创建axios实例
 const api = axios.create({
   baseURL: '/api',
-  timeout: 15000, // 增加超时时间
-  retry: 3, // 重试次数
-  retryDelay: 1000 // 重试延迟
+  timeout: 15000
 })
 
 // 请求拦截器 - 添加认证token
@@ -23,29 +21,17 @@ api.interceptors.request.use(
   }
 )
 
-// 响应拦截器 - 处理认证错误和重试
+// 响应拦截器 - 处理认证错误
 api.interceptors.response.use(
   (response) => {
     return response
   },
-  async (error) => {
-    const { config } = error
-    
+  (error) => {
     // 处理401认证错误
     if (error.response?.status === 401) {
       localStorage.removeItem('auth_token')
       window.location.href = '/login'
       return Promise.reject(error)
-    }
-    
-    // 重试逻辑
-    if (config && config.retry > 0) {
-      config.retry -= 1
-      
-      if (config.retry > 0) {
-        await new Promise(resolve => setTimeout(resolve, config.retryDelay))
-        return api(config)
-      }
     }
     
     console.error('API请求失败:', error)
@@ -82,7 +68,13 @@ export const servicesAPI = {
   updateInboundCustomName: (serviceId, tag, customName) => api.put(`/db/inbound/${serviceId}/${tag}/custom-name`, { custom_name: customName }),
   
   // 更新客户端自定义名称
-  updateClientCustomName: (serviceId, email, customName) => api.put(`/db/client/${serviceId}/${email}/custom-name`, { custom_name: customName })
+  updateClientCustomName: (serviceId, email, customName) => api.put(`/db/client/${serviceId}/${email}/custom-name`, { custom_name: customName }),
+  
+  // 下载端口历史数据
+  downloadPortHistory: (serviceId, tag) => api.get(`/db/download/port-history/${serviceId}/${tag}`, { responseType: 'blob' }),
+  
+  // 下载用户历史数据
+  downloadUserHistory: (serviceId, email) => api.get(`/db/download/user-history/${serviceId}/${email}`, { responseType: 'blob' })
 }
 
 export const authAPI = {

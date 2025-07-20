@@ -70,7 +70,7 @@ export const useServicesStore = defineStore('services', () => {
     if (refreshInterval.value) {
       clearInterval(refreshInterval.value)
     }
-    // 每60秒刷新一次，确保活跃状态实时更新
+    // 每60秒刷新一次
     refreshInterval.value = setInterval(() => {
       loadServices()
     }, 60000)
@@ -84,6 +84,14 @@ export const useServicesStore = defineStore('services', () => {
     }
   }
 
+  // 强制刷新
+  const forceRefresh = () => {
+    loadServices()
+    if (selectedService.value) {
+      loadServiceDetail(selectedService.value.id)
+    }
+  }
+
   return {
     services: computed(() => services.value),
     selectedService: computed(() => selectedService.value),
@@ -94,6 +102,7 @@ export const useServicesStore = defineStore('services', () => {
     loadServiceDetail,
     deleteService,
     startAutoRefresh,
-    stopAutoRefresh
+    stopAutoRefresh,
+    forceRefresh
   }
 }) 
