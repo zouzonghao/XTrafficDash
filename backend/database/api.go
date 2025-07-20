@@ -829,15 +829,16 @@ func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
 			s.ip_address,
 			s.service_name,
 			ct.email,
-			'' as inbound_tag,
+			COALESCE(it.tag, '') as inbound_tag,
 			COALESCE(SUM(cth.daily_up), 0) as total_up,
 			COALESCE(SUM(cth.daily_down), 0) as total_down,
 			ct.last_updated as last_seen
 		FROM client_traffics ct
 		JOIN services s ON ct.service_id = s.id
+		LEFT JOIN inbound_traffics it ON ct.service_id = it.service_id
 		LEFT JOIN client_traffic_history cth ON ct.id = cth.client_traffic_id
 		WHERE ct.service_id = ? AND ct.email = ?
-		GROUP BY s.ip_address, s.service_name, ct.email, ct.last_updated
+		GROUP BY s.ip_address, s.service_name, ct.email, it.tag, ct.last_updated
 	`
 
 	err := api.db.db.QueryRow(userQuery, serviceID, email).Scan(
