@@ -280,13 +280,14 @@ onMounted(async () => {
 .table-header {
   display: grid;
   grid-template-columns: 120px 1fr 1fr 1fr;
-  background: #2c3e50;
+  background: white;
   padding: 12px 16px;
   font-weight: 600;
-  color: white;
+  color: #2c3e50;
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border-bottom: 2px solid #e9ecef;
 }
 
 .header-cell {
