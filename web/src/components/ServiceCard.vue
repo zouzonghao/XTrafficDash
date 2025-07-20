@@ -25,16 +25,23 @@
             <input 
               v-model="editingName" 
               @keyup.enter="saveName"
-              @blur="cancelEditName"
+              @blur="handleBlur"
               class="edit-input"
               ref="nameInput"
             />
             <button 
-              class="save-icon" 
+              class="save-button" 
               @click.stop="saveName"
-              title="保存"
+              title="确认"
             >
-              ✅
+              确认
+            </button>
+            <button 
+              class="cancel-button" 
+              @click.stop="cancelEditName"
+              title="取消"
+            >
+              取消
             </button>
           </div>
         </div>
@@ -129,6 +136,20 @@ const saveName = async () => {
 const cancelEditName = () => {
   isEditingName.value = false
   editingName.value = ''
+}
+
+// 处理失去焦点事件
+const handleBlur = (event) => {
+  // 延迟执行，避免与按钮点击冲突
+  setTimeout(() => {
+    // 检查是否点击了保存或取消按钮
+    const relatedTarget = event.relatedTarget
+    if (relatedTarget && (relatedTarget.classList.contains('save-button') || relatedTarget.classList.contains('cancel-button'))) {
+      return
+    }
+    // 如果没有点击按钮，则取消编辑
+    cancelEditName()
+  }, 100)
 }
 
 const createChart = async () => {
@@ -245,7 +266,7 @@ onUnmounted(() => {
   color: #2c3e50;
 }
 
-.edit-icon, .save-icon {
+.edit-icon {
   background: none;
   border: none;
   cursor: pointer;
@@ -259,8 +280,36 @@ onUnmounted(() => {
   background: rgba(52, 152, 219, 0.1);
 }
 
-.save-icon:hover {
-  background: rgba(46, 204, 113, 0.1);
+.save-button, .cancel-button {
+  background: none;
+  border: 1px solid #ddd;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  color: #2c3e50;
+}
+
+.save-button {
+  background: #27ae60;
+  color: white;
+  border-color: #27ae60;
+}
+
+.save-button:hover {
+  background: #229954;
+  border-color: #229954;
+}
+
+.cancel-button {
+  background: #ecf0f1;
+  border-color: #bdc3c7;
+}
+
+.cancel-button:hover {
+  background: #d5dbdb;
+  border-color: #95a5a6;
 }
 
 .edit-container {

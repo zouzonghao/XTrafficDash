@@ -44,16 +44,23 @@
                   <input 
                     v-model="inbound.editingName" 
                     @keyup.enter="saveInboundName(inbound)"
-                    @blur="cancelEditInbound(inbound)"
+                    @blur="handleInboundBlur($event, inbound)"
                     class="edit-input"
                     ref="inboundInput"
                   />
                   <button 
-                    class="save-icon" 
+                    class="save-button" 
                     @click.stop="saveInboundName(inbound)"
-                    title="保存"
+                    title="确认"
                   >
-                    ✅
+                    确认
+                  </button>
+                  <button 
+                    class="cancel-button" 
+                    @click.stop="cancelEditInbound(inbound)"
+                    title="取消"
+                  >
+                    取消
                   </button>
                 </div>
               </div>
@@ -97,16 +104,23 @@
                   <input 
                     v-model="client.editingName" 
                     @keyup.enter="saveClientName(client)"
-                    @blur="cancelEditClient(client)"
+                    @blur="handleClientBlur($event, client)"
                     class="edit-input"
                     ref="clientInput"
                   />
                   <button 
-                    class="save-icon" 
+                    class="save-button" 
                     @click.stop="saveClientName(client)"
-                    title="保存"
+                    title="确认"
                   >
-                    ✅
+                    确认
+                  </button>
+                  <button 
+                    class="cancel-button" 
+                    @click.stop="cancelEditClient(client)"
+                    title="取消"
+                  >
+                    取消
                   </button>
                 </div>
               </div>
@@ -225,6 +239,28 @@ const saveClientName = async (client) => {
 const cancelEditClient = (client) => {
   client.isEditing = false
   client.editingName = ''
+}
+
+// 处理入站流量失去焦点事件
+const handleInboundBlur = (event, inbound) => {
+  setTimeout(() => {
+    const relatedTarget = event.relatedTarget
+    if (relatedTarget && (relatedTarget.classList.contains('save-button') || relatedTarget.classList.contains('cancel-button'))) {
+      return
+    }
+    cancelEditInbound(inbound)
+  }, 100)
+}
+
+// 处理客户端失去焦点事件
+const handleClientBlur = (event, client) => {
+  setTimeout(() => {
+    const relatedTarget = event.relatedTarget
+    if (relatedTarget && (relatedTarget.classList.contains('save-button') || relatedTarget.classList.contains('cancel-button'))) {
+      return
+    }
+    cancelEditClient(client)
+  }, 100)
 }
 
 const createDetailChart = async () => {
@@ -433,7 +469,7 @@ onUnmounted(() => {
   color: #2c3e50;
 }
 
-.edit-icon, .save-icon {
+.edit-icon {
   background: none;
   border: none;
   cursor: pointer;
@@ -447,8 +483,36 @@ onUnmounted(() => {
   background: rgba(52, 152, 219, 0.1);
 }
 
-.save-icon:hover {
-  background: rgba(46, 204, 113, 0.1);
+.save-button, .cancel-button {
+  background: none;
+  border: 1px solid #ddd;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  color: #2c3e50;
+}
+
+.save-button {
+  background: #27ae60;
+  color: white;
+  border-color: #27ae60;
+}
+
+.save-button:hover {
+  background: #229954;
+  border-color: #229954;
+}
+
+.cancel-button {
+  background: #ecf0f1;
+  border-color: #bdc3c7;
+}
+
+.cancel-button:hover {
+  background: #d5dbdb;
+  border-color: #95a5a6;
 }
 
 .edit-container {
