@@ -47,13 +47,11 @@ WORKDIR /app
 # 从构建阶段复制文件
 COPY --from=frontend-builder /app/web/dist ./web/dist
 COPY --from=backend-builder /app/main .
-COPY init.sh /app/init.sh
 
 # 创建数据目录并设置权限
 RUN mkdir -p /app/data && \
     chown -R appuser:appgroup /app && \
-    chmod +x /app/main && \
-    chmod +x /app/init.sh
+    chmod +x /app/main
 
 # 切换到非root用户
 USER appuser
