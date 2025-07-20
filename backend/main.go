@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +103,14 @@ func init() {
 	} else {
 		logger.Info("数据库初始化成功")
 	}
+
+	// 初始化hy2配置表
+	if db != nil {
+		err := db.InitHy2ConfigTable()
+		if err != nil {
+			logger.Errorf("初始化hy2配置表失败: %v", err)
+		}
+	}
 }
 
 func main() {
@@ -127,6 +139,9 @@ func main() {
 	// 启动服务器
 	addr := fmt.Sprintf("0.0.0.0:%d", config.ListenPort)
 	logger.Infof("服务器启动在地址 %s", addr)
+
+	// 启动hy2流量同步定时任务（自动执行）
+	go startHy2SyncTask()
 
 	if err := r.Run(addr); err != nil {
 		logger.Fatalf("服务器启动失败: %v", err)
@@ -186,6 +201,12 @@ func setupRoutes(r *gin.Engine) {
 			"path":    c.Request.URL.Path,
 		})
 	})
+
+	r.GET("/api/hy2-configs", getAllHy2ConfigsHandler)
+	r.POST("/api/hy2-configs", saveAllHy2ConfigsHandler)
+	r.POST("/api/hy2-configs/add", addHy2ConfigHandler)
+	r.POST("/api/hy2-configs/update", updateHy2ConfigHandler)
+	r.DELETE("/api/hy2-configs/:id", deleteHy2ConfigHandler)
 
 	// 处理所有其他静态文件请求
 	r.NoRoute(func(c *gin.Context) {
@@ -286,4 +307,286 @@ func handleTraffic(c *gin.Context) {
 			"timestamp": requestData["timestamp"],
 		},
 	})
+}
+
+// 获取hy2配置
+func getHy2ConfigHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	cfgs, err := db.GetAllHy2Configs()
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if len(cfgs) == 0 {
+		c.JSON(404, gin.H{"success": false, "error": "未找到hy2配置"})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "data": cfgs[0]}) // 假设只有一个hy2配置
+}
+
+// 更新hy2配置
+func updateHy2ConfigHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	var cfg database.Hy2Config
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "参数错误: " + err.Error()})
+		return
+	}
+	err := db.UpdateHy2Config(&cfg)
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "message": "保存成功"})
+}
+
+// 删除单条
+func deleteHy2ConfigHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "参数错误: id无效"})
+		return
+	}
+	err = db.DeleteHy2Config(id)
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "message": "删除成功"})
+}
+
+// 获取全部hy2配置
+func getAllHy2ConfigsHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	cfgs, err := db.GetAllHy2Configs()
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "data": cfgs})
+}
+
+func isValidHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	// 简单IP或域名校验
+	ipRe := regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}$`)
+	domainRe := regexp.MustCompile(`^([a-zA-Z0-9\-]+\.)+[a-zA-Z]{2,}$`)
+	return ipRe.MatchString(host) || domainRe.MatchString(host)
+}
+
+func isValidPort(port string) bool {
+	p, err := strconv.Atoi(port)
+	return err == nil && p > 0 && p <= 65535
+}
+
+func isValidURL(url string) bool {
+	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
+}
+
+// 批量保存（全量覆盖）
+func saveAllHy2ConfigsHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	var cfgs []database.Hy2Config
+	if err := c.ShouldBindJSON(&cfgs); err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "参数错误: " + err.Error()})
+		return
+	}
+	// 校验
+	if len(cfgs) > 0 {
+		// 统一目标地址
+		targetURL := cfgs[0].TargetAPIURL
+		if !isValidURL(targetURL) {
+			c.JSON(400, gin.H{"success": false, "error": "目标API地址无效，必须以http://或https://开头"})
+			return
+		}
+		for i, cfg := range cfgs {
+			if !isValidHost(cfg.SourceAPIHost) {
+				c.JSON(400, gin.H{"success": false, "error": "第" + strconv.Itoa(i+1) + "行：hy2服务端IP/域名无效"})
+				return
+			}
+			if !isValidPort(cfg.SourceAPIPort) {
+				c.JSON(400, gin.H{"success": false, "error": "第" + strconv.Itoa(i+1) + "行：hy2服务端端口无效"})
+				return
+			}
+			if strings.TrimSpace(cfg.SourceAPIPassword) == "" {
+				c.JSON(400, gin.H{"success": false, "error": "第" + strconv.Itoa(i+1) + "行：hy2服务端密码不能为空"})
+				return
+			}
+			if cfg.TargetAPIURL != targetURL {
+				c.JSON(400, gin.H{"success": false, "error": "所有配置的目标API地址必须一致"})
+				return
+			}
+		}
+	}
+	// 先清空表再插入
+	_, err := db.GetRawDB().Exec("DELETE FROM hy2_config")
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	for _, cfg := range cfgs {
+		db.AddHy2Config(&cfg)
+	}
+	c.JSON(200, gin.H{"success": true, "message": "保存成功"})
+}
+
+// 新增单条
+func addHy2ConfigHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	var cfg database.Hy2Config
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "参数错误: " + err.Error()})
+		return
+	}
+	err := db.AddHy2Config(&cfg)
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "message": "添加成功"})
+}
+
+// hy2流量同步定时任务（自动执行，支持多配置）
+func startHy2SyncTask() {
+	for {
+		if db == nil {
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		cfgs, err := db.GetAllHy2Configs()
+		if err != nil {
+			logger.Errorf("读取hy2配置失败: %v", err)
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		// 如果没有配置，跳过本次执行
+		if len(cfgs) == 0 {
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		// 从第一个配置中获取目标地址，所有配置共享同一个目标
+		targetURL := cfgs[0].TargetAPIURL
+		if targetURL == "" {
+			logger.Warnf("[HY2] 目标地址为空，跳过本次同步")
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		// 为每个配置执行同步，但都发送到同一个目标地址
+		for _, cfg := range cfgs {
+			// 跳过无效配置
+			if cfg.SourceAPIHost == "" || cfg.SourceAPIPort == "" || cfg.SourceAPIPassword == "" {
+				continue
+			}
+
+			// 创建配置副本，使用统一的目标地址
+			syncCfg := database.Hy2Config{
+				ID:                cfg.ID,
+				SourceAPIPassword: cfg.SourceAPIPassword,
+				SourceAPIHost:     cfg.SourceAPIHost,
+				SourceAPIPort:     cfg.SourceAPIPort,
+				TargetAPIURL:      targetURL, // 使用统一的目标地址
+			}
+
+			go hy2SyncOnce(&syncCfg)
+		}
+		time.Sleep(10 * time.Second)
+	}
+}
+
+// hy2流量同步单次执行逻辑
+func hy2SyncOnce(cfg *database.Hy2Config) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	// 构建源API URL
+	sourceURL := "http://" + cfg.SourceAPIHost + ":" + cfg.SourceAPIPort + "/traffic?clear=1"
+	// 1. 拉取源API流量
+	req, err := http.NewRequest("GET", sourceURL, nil)
+	if err != nil {
+		logger.Errorf("[HY2] 创建请求失败: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", cfg.SourceAPIPassword)
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.Errorf("[HY2] 请求源API失败: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		logger.Errorf("[HY2] 源API返回状态码: %d, 响应: %s", resp.StatusCode, string(body))
+		return
+	}
+	var raw struct {
+		User struct {
+			Tx int64 `json:"tx"`
+			Rx int64 `json:"rx"`
+		} `json:"user"`
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.Errorf("[HY2] 读取源API响应失败: %v", err)
+		return
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		logger.Errorf("[HY2] 解析源API响应失败: %v", err)
+		return
+	}
+	logger.Infof("[HY2] 获取到流量数据: tx=%d, rx=%d", raw.User.Tx, raw.User.Rx)
+	// 2. 转换格式
+	postData := map[string]interface{}{
+		"inboundTraffics": []map[string]interface{}{
+			{
+				"IsInbound":  true,
+				"IsOutbound": false,
+				"Tag":        "hysteria2",
+				"Up":         raw.User.Tx,
+				"Down":       raw.User.Rx,
+			},
+		},
+	}
+	jsonBytes, _ := json.Marshal(postData)
+	// 3. POST到目标API
+	postReq, err := http.NewRequest("POST", cfg.TargetAPIURL, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		logger.Errorf("[HY2] 创建POST请求失败: %v", err)
+		return
+	}
+	postReq.Header.Set("Content-Type", "application/json")
+	postResp, err := client.Do(postReq)
+	if err != nil {
+		logger.Errorf("[HY2] 发送POST到目标API失败: %v", err)
+		return
+	}
+	defer postResp.Body.Close()
+	if postResp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(postResp.Body)
+		logger.Errorf("[HY2] 目标API返回状态码: %d, 响应: %s", postResp.StatusCode, string(respBody))
+		return
+	}
+	logger.Infof("[HY2] 流量数据已成功推送到目标API")
 }

@@ -5,6 +5,7 @@ import Home from '../views/Home.vue'
 import Detail from '../views/Detail.vue'
 import PortDetail from '../views/PortDetail.vue'
 import UserDetail from '../views/UserDetail.vue'
+import Hy2Setting from '../views/Hy2Setting.vue'
 
 const routes = [
   {
@@ -39,6 +40,12 @@ const routes = [
     path: '/user/:serviceId/:email',
     name: 'UserDetail',
     component: UserDetail,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/hy2-setting',
+    name: 'Hy2Setting',
+    component: Hy2Setting,
     meta: { requiresAuth: true }
   }
 ]

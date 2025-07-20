@@ -4,6 +4,7 @@
       <h1>XTrafficDash</h1>
       <p>多服务器流量统计</p>
       <button @click="handleLogout" class="logout-button">退出登录</button>
+      <button @click="goHy2Setting" class="hy2-setting-button">HY2设置</button>
     </div>
 
     <div v-if="servicesStore.loading" class="loading">
@@ -89,6 +90,10 @@ const handleLogout = () => {
   router.push('/login')
 }
 
+const goHy2Setting = () => {
+  router.push('/hy2-setting')
+}
+
 onMounted(() => {
   servicesStore.loadServices()
   servicesStore.startAutoRefresh()
@@ -125,6 +130,23 @@ onUnmounted(() => {
   border-radius: 5px;
   cursor: pointer;
   margin-top: 15px;
+}
+
+.hy2-setting-button {
+  background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-left: 12px;
+  margin-top: 10px;
+  transition: all 0.3s;
+}
+.hy2-setting-button:hover {
+  background: linear-gradient(135deg, #0984e3 0%, #74b9ff 100%);
+  transform: translateY(-1px);
 }
 
 .modal-overlay {

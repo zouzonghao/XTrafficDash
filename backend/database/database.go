@@ -81,6 +81,17 @@ type ClientTrafficRecord struct {
 	Status      string    `json:"status"`
 }
 
+// HY2配置结构体
+// 用于存储hy2主动流量同步的参数
+
+type Hy2Config struct {
+	ID                int    `json:"id"`
+	SourceAPIPassword string `json:"source_api_password"`
+	SourceAPIHost     string `json:"source_api_host"`
+	SourceAPIPort     string `json:"source_api_port"`
+	TargetAPIURL      string `json:"target_api_url"`
+}
+
 // 打开数据库连接
 func OpenDatabase(dbPath string) (*Database, error) {
 	db, err := sql.Open("sqlite3", dbPath)
@@ -276,6 +287,16 @@ func initDatabase(db *sql.DB) error {
 		processed BOOLEAN DEFAULT FALSE,
 		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
 	);
+
+	-- 7. HY2配置表
+	CREATE TABLE IF NOT EXISTS hy2_config (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		source_api_password TEXT NOT NULL DEFAULT 'admin',
+		source_api_host TEXT NOT NULL DEFAULT '',
+		source_api_port TEXT NOT NULL DEFAULT '',
+		target_api_url TEXT NOT NULL DEFAULT ''
+	);
+	INSERT OR IGNORE INTO hy2_config (id) VALUES (1);
 
 	-- 创建索引
 	CREATE INDEX IF NOT EXISTS idx_services_ip ON services(ip_address);
@@ -943,4 +964,63 @@ func (d *Database) processDailyClientTraffic(tx *sql.Tx) error {
 	}
 
 	return nil
+}
+
+// 创建/更新hy2配置表（支持多条配置）
+func (d *Database) InitHy2ConfigTable() error {
+	sql := `
+	CREATE TABLE IF NOT EXISTS hy2_config (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		source_api_password TEXT NOT NULL DEFAULT 'admin',
+		source_api_host TEXT NOT NULL DEFAULT '',
+		source_api_port TEXT NOT NULL DEFAULT '',
+		target_api_url TEXT NOT NULL DEFAULT ''
+	);
+	`
+	_, err := d.db.Exec(sql)
+	return err
+}
+
+// 获取全部hy2配置
+func (d *Database) GetAllHy2Configs() ([]Hy2Config, error) {
+	rows, err := d.db.Query(`SELECT id, source_api_password, source_api_host, source_api_port, target_api_url FROM hy2_config`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var configs []Hy2Config
+	for rows.Next() {
+		var cfg Hy2Config
+		err := rows.Scan(&cfg.ID, &cfg.SourceAPIPassword, &cfg.SourceAPIHost, &cfg.SourceAPIPort, &cfg.TargetAPIURL)
+		if err != nil {
+			return nil, err
+		}
+		configs = append(configs, cfg)
+	}
+	return configs, nil
+}
+
+// 新增hy2配置
+func (d *Database) AddHy2Config(cfg *Hy2Config) error {
+	_, err := d.db.Exec(`INSERT INTO hy2_config (source_api_password, source_api_host, source_api_port, target_api_url) VALUES (?, ?, ?, ?)`,
+		cfg.SourceAPIPassword, cfg.SourceAPIHost, cfg.SourceAPIPort, cfg.TargetAPIURL)
+	return err
+}
+
+// 更新hy2配置
+func (d *Database) UpdateHy2Config(cfg *Hy2Config) error {
+	_, err := d.db.Exec(`UPDATE hy2_config SET source_api_password=?, source_api_host=?, source_api_port=?, target_api_url=? WHERE id=?`,
+		cfg.SourceAPIPassword, cfg.SourceAPIHost, cfg.SourceAPIPort, cfg.TargetAPIURL, cfg.ID)
+	return err
+}
+
+// 删除hy2配置
+func (d *Database) DeleteHy2Config(id int) error {
+	_, err := d.db.Exec(`DELETE FROM hy2_config WHERE id=?`, id)
+	return err
+}
+
+// Database结构体方法：返回原始*sql.DB
+func (d *Database) GetRawDB() *sql.DB {
+	return d.db
 }

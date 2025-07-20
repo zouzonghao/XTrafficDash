@@ -83,3 +83,4 @@ scripts/
 !scripts/docker-deploy.sh
 !scripts/start.sh backend/xtrafficdash.db-shm
 backend/xtrafficdash.db-wal
+backend/xtrafficdash.db-shm
