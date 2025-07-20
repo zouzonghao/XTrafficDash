@@ -33,6 +33,7 @@
       <div class="modal" @click.stop>
         <h3>确认删除</h3>
         <p>您确定要删除服务 <strong>{{ serviceToDelete?.custom_name || serviceToDelete?.ip_address }}</strong> 吗？</p>
+        <p v-if="serviceToDelete?.custom_name" class="ip-info">IP：{{ serviceToDelete?.ip_address }}</p>
         <p class="warning-text">此操作将删除该服务的所有数据，包括流量记录和历史数据，且无法恢复。</p>
         <div class="modal-buttons">
           <button class="modal-button cancel" @click="hideDeleteConfirm">取消</button>
@@ -158,6 +159,12 @@ onUnmounted(() => {
   margin-bottom: 30px;
   color: #7f8c8d;
   line-height: 1.5;
+}
+
+.ip-info {
+  margin-bottom: 20px !important;
+  color: #95a5a6 !important;
+  font-size: 0.9rem;
 }
 
 .warning-text {
