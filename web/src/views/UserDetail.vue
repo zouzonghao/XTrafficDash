@@ -107,12 +107,7 @@
         </div>
       </div>
 
-      <div class="chart-section">
-        <div class="section-title">历史流量趋势</div>
-        <div class="chart-container">
-          <canvas id="user-chart"></canvas>
-        </div>
-      </div>
+
     </div>
   </div>
   
@@ -134,7 +129,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
 import { formatBytes, formatDate, formatDateTime } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
-import Chart from 'chart.js/auto'
 import EditNameModal from '../components/EditNameModal.vue'
 
 const route = useRoute()
@@ -151,126 +145,6 @@ const currentEditingValue = ref('')
 
 const selectedService = computed(() => servicesStore.selectedService)
 
-let userChart = null
-
-const createUserChart = async () => {
-  if (!userDetail.value || !userDetail.value.history) {
-    return
-  }
-  
-  try {
-    const ctx = document.getElementById('user-chart')
-    if (ctx) {
-      // 销毁现有图表
-      if (userChart) {
-        userChart.destroy()
-      }
-      
-      const historyData = userDetail.value.history
-      const labels = historyData.map(item => formatDate(item.date))
-      const uploadData = historyData.map(item => item.daily_up)
-      const downloadData = historyData.map(item => item.daily_down)
-      
-      userChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: '上传',
-              data: uploadData,
-              borderColor: '#74b9ff',
-              backgroundColor: 'rgba(116, 185, 255, 0.1)',
-              tension: 0.4
-            },
-            {
-              label: '下载',
-              data: downloadData,
-              borderColor: '#00b894',
-              backgroundColor: 'rgba(0, 184, 148, 0.1)',
-              tension: 0.4
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              display: true,
-              position: 'top',
-              labels: {
-                color: '#2c3e50',
-                font: {
-                  size: 14,
-                  weight: 'bold'
-                }
-              }
-            }
-          },
-          scales: {
-            x: {
-              display: true,
-              title: {
-                display: true,
-                text: '日期',
-                color: '#2c3e50',
-                font: {
-                  size: 14,
-                  weight: 'bold'
-                }
-              },
-              ticks: {
-                color: '#2c3e50',
-                font: {
-                  size: 12
-                }
-              },
-              grid: {
-                color: 'rgba(44, 62, 80, 0.1)'
-              }
-            },
-                          y: {
-                display: true,
-                title: {
-                  display: true,
-                  text: '流量',
-                  color: '#2c3e50',
-                  font: {
-                    size: 14,
-                    weight: 'bold'
-                  }
-                },
-                ticks: {
-                  color: '#2c3e50',
-                  font: {
-                    size: 12
-                  },
-                  callback: function(value, index, values) {
-                    if (value >= 1024 * 1024 * 1024) {
-                      return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-                    } else if (value >= 1024 * 1024) {
-                      return (value / (1024 * 1024)).toFixed(1) + ' MB';
-                    } else if (value >= 1024) {
-                      return (value / 1024).toFixed(1) + ' KB';
-                    } else {
-                      return value + ' B';
-                    }
-                  }
-                },
-                grid: {
-                  color: 'rgba(44, 62, 80, 0.1)'
-                }
-              }
-          }
-        }
-      })
-    }
-  } catch (error) {
-    console.error('创建用户图表失败:', error)
-  }
-}
-
 const loadUserDetail = async () => {
   try {
     const serviceId = route.params.serviceId
@@ -281,7 +155,6 @@ const loadUserDetail = async () => {
       userDetail.value = response.data.data
       // 重置分页
       currentHistoryPage.value = 1
-      await createUserChart()
     }
   } catch (error) {
     console.error('获取用户详情失败:', error)
@@ -357,9 +230,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (userChart) {
-    userChart.destroy()
-  }
+  // 清理工作
 })
 </script>
 
@@ -553,18 +424,5 @@ onUnmounted(() => {
 
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
-}
-
-.chart-section {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-  margin-top: 25px;
-}
-
-.chart-container {
-  height: 400px;
-  position: relative;
 }
 </style> 
