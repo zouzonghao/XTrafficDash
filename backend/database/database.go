@@ -305,26 +305,10 @@ func (d *Database) ProcessTrafficData(clientIP string, userAgent string, request
 		return fmt.Errorf("处理客户端流量失败: %v", err)
 	}
 
-	// 5. 检查是否有实际流量，如果有则更新服务最后活跃时间
-	hasTraffic := false
-	for _, inbound := range trafficData.InboundTraffics {
-		if inbound.IsInbound && (inbound.Up > 0 || inbound.Down > 0) {
-			hasTraffic = true
-			break
-		}
-	}
-	for _, client := range trafficData.ClientTraffics {
-		if client.Up > 0 || client.Down > 0 {
-			hasTraffic = true
-			break
-		}
-	}
-
-	if hasTraffic {
-		err = d.updateServiceLastSeen(tx, serviceID)
-		if err != nil {
-			return fmt.Errorf("更新服务最后活跃时间失败: %v", err)
-		}
+	// 5. 只要有数据包发来就更新节点最后活跃时间（包括心跳数据）
+	err = d.updateServiceLastSeen(tx, serviceID)
+	if err != nil {
+		return fmt.Errorf("更新服务最后活跃时间失败: %v", err)
 	}
 
 	// 提交事务
@@ -542,10 +526,10 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 			s.service_name,
 			s.custom_name,
 			s.last_seen,
-			CASE 
-				WHEN (strftime('%s', 'now') - strftime('%s', s.last_seen)) <= 60 THEN 'active'
-				ELSE 'inactive'
-			END as status
+					CASE 
+			WHEN (strftime('%s', 'now') - strftime('%s', s.last_seen)) <= 30 THEN 'active'
+			ELSE 'inactive'
+		END as status
 		FROM services s
 		ORDER BY s.last_seen DESC
 	`)
