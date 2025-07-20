@@ -62,6 +62,7 @@ type InboundTrafficRecord struct {
 	ServiceID   int       `json:"service_id"`
 	Tag         string    `json:"tag"`
 	Port        int       `json:"port"`
+	CustomName  string    `json:"custom_name"`
 	Up          int64     `json:"up"`
 	Down        int64     `json:"down"`
 	LastUpdated time.Time `json:"last_updated"`
@@ -73,6 +74,7 @@ type ClientTrafficRecord struct {
 	ID          int       `json:"id"`
 	ServiceID   int       `json:"service_id"`
 	Email       string    `json:"email"`
+	CustomName  string    `json:"custom_name"`
 	Up          int64     `json:"up"`
 	Down        int64     `json:"down"`
 	LastUpdated time.Time `json:"last_updated"`
@@ -101,7 +103,56 @@ func OpenDatabase(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("初始化数据库失败: %v", err)
 	}
 
+	// 执行数据库迁移
+	if err := migrateDatabase(db); err != nil {
+		return nil, fmt.Errorf("数据库迁移失败: %v", err)
+	}
+
 	return &Database{db: db}, nil
+}
+
+// 数据库迁移函数
+func migrateDatabase(db *sql.DB) error {
+	// 检查并添加 services 表的 custom_name 字段
+	if !columnExists(db, "services", "custom_name") {
+		_, err := db.Exec("ALTER TABLE services ADD COLUMN custom_name TEXT")
+		if err != nil {
+			return fmt.Errorf("添加 services.custom_name 字段失败: %v", err)
+		}
+	}
+
+	// 检查并添加 inbound_traffics 表的 custom_name 字段
+	if !columnExists(db, "inbound_traffics", "custom_name") {
+		_, err := db.Exec("ALTER TABLE inbound_traffics ADD COLUMN custom_name TEXT")
+		if err != nil {
+			return fmt.Errorf("添加 inbound_traffics.custom_name 字段失败: %v", err)
+		}
+	}
+
+	// 检查并添加 client_traffics 表的 custom_name 字段
+	if !columnExists(db, "client_traffics", "custom_name") {
+		_, err := db.Exec("ALTER TABLE client_traffics ADD COLUMN custom_name TEXT")
+		if err != nil {
+			return fmt.Errorf("添加 client_traffics.custom_name 字段失败: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// 检查列是否存在
+func columnExists(db *sql.DB, tableName, columnName string) bool {
+	query := `
+		SELECT COUNT(*) 
+		FROM pragma_table_info(?) 
+		WHERE name = ?
+	`
+	var count int
+	err := db.QueryRow(query, tableName, columnName).Scan(&count)
+	if err != nil {
+		return false
+	}
+	return count > 0
 }
 
 // 关闭数据库连接
@@ -122,6 +173,7 @@ func initDatabase(db *sql.DB) error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		ip_address TEXT NOT NULL UNIQUE,
 		service_name TEXT,
+		custom_name TEXT,
 		first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		status TEXT DEFAULT 'active',
@@ -135,6 +187,7 @@ func initDatabase(db *sql.DB) error {
 		service_id INTEGER NOT NULL,
 		tag TEXT NOT NULL,
 		port INTEGER,
+		custom_name TEXT,
 		up BIGINT DEFAULT 0,
 		down BIGINT DEFAULT 0,
 		last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -150,6 +203,7 @@ func initDatabase(db *sql.DB) error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		service_id INTEGER NOT NULL,
 		email TEXT NOT NULL,
+		custom_name TEXT,
 		up BIGINT DEFAULT 0,
 		down BIGINT DEFAULT 0,
 		last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -486,11 +540,12 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 			s.id,
 			s.ip_address,
 			s.service_name,
+			s.custom_name,
 			s.last_seen,
-					CASE 
-			WHEN (strftime('%s', 'now') - strftime('%s', s.last_seen)) <= 60 THEN 'active'
-			ELSE 'inactive'
-		END as status
+			CASE 
+				WHEN (strftime('%s', 'now') - strftime('%s', s.last_seen)) <= 60 THEN 'active'
+				ELSE 'inactive'
+			END as status
 		FROM services s
 		ORDER BY s.last_seen DESC
 	`)
@@ -505,9 +560,9 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 	// 处理服务基本信息
 	for serviceRows.Next() {
 		var id int
-		var ipAddress, serviceName, lastSeen, status string
+		var ipAddress, serviceName, customName, lastSeen, status string
 
-		scanErr := serviceRows.Scan(&id, &ipAddress, &serviceName, &lastSeen, &status)
+		scanErr := serviceRows.Scan(&id, &ipAddress, &serviceName, &customName, &lastSeen, &status)
 		if scanErr != nil {
 			return nil, scanErr
 		}
@@ -516,6 +571,7 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 			"id":                 id,
 			"ip_address":         d.maskIPAddress(ipAddress),
 			"service_name":       serviceName,
+			"custom_name":        customName,
 			"last_seen":          lastSeen,
 			"status":             status,
 			"inbound_count":      0,
@@ -604,11 +660,11 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, error) {
 	// 获取服务基本信息
 	var service Service
-	var rawIPAddress string
+	var rawIPAddress, customName string
 	err := d.db.QueryRow(`
-		SELECT id, ip_address, service_name, first_seen, last_seen, status
+		SELECT id, ip_address, service_name, custom_name, first_seen, last_seen, status
 		FROM services WHERE id = ?
-	`, serviceID).Scan(&service.ID, &rawIPAddress, &service.ServiceName,
+	`, serviceID).Scan(&service.ID, &rawIPAddress, &service.ServiceName, &customName,
 		&service.FirstSeen, &service.LastSeen, &service.Status)
 	if err != nil {
 		return nil, err
@@ -619,7 +675,7 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 
 	// 获取入站流量
 	inboundRows, err := d.db.Query(`
-		SELECT id, service_id, tag, port, up, down, last_updated, status
+		SELECT id, service_id, tag, port, custom_name, up, down, last_updated, status
 		FROM inbound_traffics WHERE service_id = ? AND status = 'active'
 		ORDER BY tag
 	`, serviceID)
@@ -631,17 +687,20 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 	var inboundTraffics []InboundTrafficRecord
 	for inboundRows.Next() {
 		var record InboundTrafficRecord
-		err := inboundRows.Scan(&record.ID, &record.ServiceID, &record.Tag, &record.Port,
+		var customName string
+		err := inboundRows.Scan(&record.ID, &record.ServiceID, &record.Tag, &record.Port, &customName,
 			&record.Up, &record.Down, &record.LastUpdated, &record.Status)
 		if err != nil {
 			return nil, err
 		}
+		// 保存自定义名称
+		record.CustomName = customName
 		inboundTraffics = append(inboundTraffics, record)
 	}
 
 	// 获取客户端流量
 	clientRows, err := d.db.Query(`
-		SELECT id, service_id, email, up, down, last_updated, status
+		SELECT id, service_id, email, custom_name, up, down, last_updated, status
 		FROM client_traffics WHERE service_id = ? AND status = 'active'
 		ORDER BY email
 	`, serviceID)
@@ -653,11 +712,14 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 	var clientTraffics []ClientTrafficRecord
 	for clientRows.Next() {
 		var record ClientTrafficRecord
-		err := clientRows.Scan(&record.ID, &record.ServiceID, &record.Email, &record.Up,
+		var customName string
+		err := clientRows.Scan(&record.ID, &record.ServiceID, &record.Email, &customName, &record.Up,
 			&record.Down, &record.LastUpdated, &record.Status)
 		if err != nil {
 			return nil, err
 		}
+		// 保存自定义名称
+		record.CustomName = customName
 		clientTraffics = append(clientTraffics, record)
 	}
 

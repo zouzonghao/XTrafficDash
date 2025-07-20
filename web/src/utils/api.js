@@ -70,7 +70,16 @@ export const servicesAPI = {
   getPortDetail: (serviceId, tag) => api.get(`/db/port-detail/${serviceId}/${tag}`),
   
   // 获取用户详情
-  getUserDetail: (serviceId, email) => api.get(`/db/user-detail/${serviceId}/${email}`)
+  getUserDetail: (serviceId, email) => api.get(`/db/user-detail/${serviceId}/${email}`),
+  
+  // 更新服务自定义名称
+  updateServiceCustomName: (serviceId, customName) => api.put(`/db/services/${serviceId}/custom-name`, { custom_name: customName }),
+  
+  // 更新入站端口自定义名称
+  updateInboundCustomName: (serviceId, tag, customName) => api.put(`/db/inbound/${serviceId}/${tag}/custom-name`, { custom_name: customName }),
+  
+  // 更新客户端自定义名称
+  updateClientCustomName: (serviceId, email, customName) => api.put(`/db/client/${serviceId}/${email}/custom-name`, { custom_name: customName })
 }
 
 export const authAPI = {

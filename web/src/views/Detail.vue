@@ -25,11 +25,38 @@
             :key="inbound.id" 
             class="table-row"
           >
-            <div 
-              class="table-label clickable" 
-              @click="viewPortDetail(selectedService.id, inbound.tag)"
-            >
-              {{ inbound.tag }}
+            <div class="table-label-container">
+              <div 
+                class="table-label clickable" 
+                @click="viewPortDetail(selectedService.id, inbound.tag)"
+              >
+                <span v-if="!inbound.isEditing" class="display-name">
+                  {{ inbound.custom_name || inbound.tag }}
+                  <button 
+                    class="edit-icon" 
+                    @click.stop="startEditInbound(inbound)"
+                    title="编辑端口名称"
+                  >
+                    ✏️
+                  </button>
+                </span>
+                <div v-else class="edit-container">
+                  <input 
+                    v-model="inbound.editingName" 
+                    @keyup.enter="saveInboundName(inbound)"
+                    @blur="cancelEditInbound(inbound)"
+                    class="edit-input"
+                    ref="inboundInput"
+                  />
+                  <button 
+                    class="save-icon" 
+                    @click.stop="saveInboundName(inbound)"
+                    title="保存"
+                  >
+                    ✅
+                  </button>
+                </div>
+              </div>
             </div>
             <div class="table-value">
               <span class="upload-traffic">
@@ -51,11 +78,38 @@
             :key="client.id" 
             class="table-row"
           >
-            <div 
-              class="table-label clickable" 
-              @click="viewUserDetail(selectedService.id, client.email)"
-            >
-              {{ client.email }}
+            <div class="table-label-container">
+              <div 
+                class="table-label clickable" 
+                @click="viewUserDetail(selectedService.id, client.email)"
+              >
+                <span v-if="!client.isEditing" class="display-name">
+                  {{ client.custom_name || client.email }}
+                  <button 
+                    class="edit-icon" 
+                    @click.stop="startEditClient(client)"
+                    title="编辑用户名称"
+                  >
+                    ✏️
+                  </button>
+                </span>
+                <div v-else class="edit-container">
+                  <input 
+                    v-model="client.editingName" 
+                    @keyup.enter="saveClientName(client)"
+                    @blur="cancelEditClient(client)"
+                    class="edit-input"
+                    ref="clientInput"
+                  />
+                  <button 
+                    class="save-icon" 
+                    @click.stop="saveClientName(client)"
+                    title="保存"
+                  >
+                    ✅
+                  </button>
+                </div>
+              </div>
             </div>
             <div class="table-value">
               <span class="upload-traffic">
@@ -79,7 +133,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, computed, ref } from 'vue'
+import { onMounted, onUnmounted, computed, ref, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
 import { formatBytes } from '../utils/formatters'
@@ -95,6 +149,83 @@ const selectedService = computed(() => servicesStore.selectedService)
 let detailChart = null
 let refreshInterval = null
 const isRefreshing = ref(false)
+
+// 编辑相关函数
+const startEditInbound = (inbound) => {
+  inbound.isEditing = true
+  inbound.editingName = inbound.custom_name || inbound.tag
+  nextTick(() => {
+    // 找到对应的输入框并聚焦
+    const inputs = document.querySelectorAll('.edit-input')
+    inputs.forEach(input => {
+      if (input.value === inbound.editingName) {
+        input.focus()
+      }
+    })
+  })
+}
+
+const saveInboundName = async (inbound) => {
+  try {
+    const response = await servicesAPI.updateInboundCustomName(
+      selectedService.value.id, 
+      inbound.tag, 
+      inbound.editingName
+    )
+    if (response.data.success) {
+      inbound.custom_name = inbound.editingName
+      inbound.isEditing = false
+    } else {
+      alert('保存失败: ' + response.data.error)
+    }
+  } catch (error) {
+    console.error('保存端口名称失败:', error)
+    alert('保存失败: ' + error.message)
+  }
+}
+
+const cancelEditInbound = (inbound) => {
+  inbound.isEditing = false
+  inbound.editingName = ''
+}
+
+const startEditClient = (client) => {
+  client.isEditing = true
+  client.editingName = client.custom_name || client.email
+  nextTick(() => {
+    // 找到对应的输入框并聚焦
+    const inputs = document.querySelectorAll('.edit-input')
+    inputs.forEach(input => {
+      if (input.value === client.editingName) {
+        input.focus()
+      }
+    })
+  })
+}
+
+const saveClientName = async (client) => {
+  try {
+    const response = await servicesAPI.updateClientCustomName(
+      selectedService.value.id, 
+      client.email, 
+      client.editingName
+    )
+    if (response.data.success) {
+      client.custom_name = client.editingName
+      client.isEditing = false
+    } else {
+      alert('保存失败: ' + response.data.error)
+    }
+  } catch (error) {
+    console.error('保存用户名称失败:', error)
+    alert('保存失败: ' + error.message)
+  }
+}
+
+const cancelEditClient = (client) => {
+  client.isEditing = false
+  client.editingName = ''
+}
 
 const createDetailChart = async () => {
   try {
@@ -285,4 +416,60 @@ onUnmounted(() => {
   }
   stopAutoRefresh()
 })
-</script> 
+</script>
+
+<style scoped>
+.table-label-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.display-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.edit-icon, .save-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+}
+
+.edit-icon:hover {
+  background: rgba(52, 152, 219, 0.1);
+}
+
+.save-icon:hover {
+  background: rgba(46, 204, 113, 0.1);
+}
+
+.edit-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.edit-input {
+  border: 1px solid #3498db;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  background: white;
+  color: #2c3e50;
+  min-width: 100px;
+}
+
+.edit-input:focus {
+  outline: none;
+  border-color: #2980b9;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+</style> 

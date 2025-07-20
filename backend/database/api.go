@@ -47,6 +47,11 @@ func (api *DatabaseAPI) RegisterRoutes(r *gin.Engine) {
 		// 端口和用户详情
 		dbGroup.GET("/port-detail/:service_id/:tag", api.GetPortDetail)
 		dbGroup.GET("/user-detail/:service_id/:email", api.GetUserDetail)
+
+		// 自定义名称管理
+		dbGroup.PUT("/services/:id/custom-name", api.UpdateServiceCustomName)
+		dbGroup.PUT("/inbound/:service_id/:tag/custom-name", api.UpdateInboundCustomName)
+		dbGroup.PUT("/client/:service_id/:email/custom-name", api.UpdateClientCustomName)
 	}
 }
 
@@ -788,5 +793,143 @@ func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
 		"success": true,
 		"message": "获取用户详情成功",
 		"data":    result,
+	})
+}
+
+// 更新服务自定义名称
+func (api *DatabaseAPI) UpdateServiceCustomName(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	var request struct {
+		CustomName string `json:"custom_name"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "请求参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新自定义名称
+	_, err = api.db.db.Exec("UPDATE services SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", request.CustomName, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "更新服务名称失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "服务名称更新成功",
+		"data": gin.H{
+			"service_id":  id,
+			"custom_name": request.CustomName,
+		},
+	})
+}
+
+// 更新入站端口自定义名称
+func (api *DatabaseAPI) UpdateInboundCustomName(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	tag := c.Param("tag")
+
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	var request struct {
+		CustomName string `json:"custom_name"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "请求参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新自定义名称
+	_, err = api.db.db.Exec("UPDATE inbound_traffics SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE service_id = ? AND tag = ?", request.CustomName, serviceID, tag)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "更新端口名称失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "端口名称更新成功",
+		"data": gin.H{
+			"service_id":  serviceID,
+			"tag":         tag,
+			"custom_name": request.CustomName,
+		},
+	})
+}
+
+// 更新客户端自定义名称
+func (api *DatabaseAPI) UpdateClientCustomName(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	email := c.Param("email")
+
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	var request struct {
+		CustomName string `json:"custom_name"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "请求参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新自定义名称
+	_, err = api.db.db.Exec("UPDATE client_traffics SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE service_id = ? AND email = ?", request.CustomName, serviceID, email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "更新用户名称失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "用户名称更新成功",
+		"data": gin.H{
+			"service_id":  serviceID,
+			"email":       email,
+			"custom_name": request.CustomName,
+		},
 	})
 }

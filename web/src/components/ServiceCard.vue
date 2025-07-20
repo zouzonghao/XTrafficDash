@@ -10,7 +10,34 @@
     
     <div class="card-header">
       <div class="ip-address">
-        {{ service.ip_address }}
+        <div class="name-container">
+          <span v-if="!isEditingName" class="display-name">
+            {{ displayName }}
+            <button 
+              class="edit-icon" 
+              @click.stop="startEditName"
+              title="编辑名称"
+            >
+              ✏️
+            </button>
+          </span>
+          <div v-else class="edit-container">
+            <input 
+              v-model="editingName" 
+              @keyup.enter="saveName"
+              @blur="cancelEditName"
+              class="edit-input"
+              ref="nameInput"
+            />
+            <button 
+              class="save-icon" 
+              @click.stop="saveName"
+              title="保存"
+            >
+              ✅
+            </button>
+          </div>
+        </div>
         <span 
           class="status-badge" 
           :class="service.status === 'active' ? 'status-active' : 'status-inactive'"
@@ -46,7 +73,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref, computed, nextTick } from 'vue'
 import { formatBytes } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
@@ -61,6 +88,48 @@ const props = defineProps({
 defineEmits(['select', 'delete'])
 
 let chart = null
+
+// 编辑名称相关状态
+const isEditingName = ref(false)
+const editingName = ref('')
+const nameInput = ref(null)
+
+// 计算显示名称
+const displayName = computed(() => {
+  return props.service.custom_name || props.service.ip_address
+})
+
+// 开始编辑名称
+const startEditName = () => {
+  editingName.value = props.service.custom_name || props.service.ip_address
+  isEditingName.value = true
+  nextTick(() => {
+    nameInput.value?.focus()
+  })
+}
+
+// 保存名称
+const saveName = async () => {
+  try {
+    const response = await servicesAPI.updateServiceCustomName(props.service.id, editingName.value)
+    if (response.data.success) {
+      // 更新本地数据
+      props.service.custom_name = editingName.value
+      isEditingName.value = false
+    } else {
+      alert('保存失败: ' + response.data.error)
+    }
+  } catch (error) {
+    console.error('保存名称失败:', error)
+    alert('保存失败: ' + error.message)
+  }
+}
+
+// 取消编辑
+const cancelEditName = () => {
+  isEditingName.value = false
+  editingName.value = ''
+}
 
 const createChart = async () => {
   try {
@@ -159,4 +228,60 @@ onUnmounted(() => {
     chart.destroy()
   }
 })
-</script> 
+</script>
+
+<style scoped>
+.name-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.display-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.edit-icon, .save-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+}
+
+.edit-icon:hover {
+  background: rgba(52, 152, 219, 0.1);
+}
+
+.save-icon:hover {
+  background: rgba(46, 204, 113, 0.1);
+}
+
+.edit-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.edit-input {
+  border: 1px solid #3498db;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  background: white;
+  color: #2c3e50;
+  min-width: 120px;
+}
+
+.edit-input:focus {
+  outline: none;
+  border-color: #2980b9;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+</style> 
