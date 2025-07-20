@@ -268,6 +268,12 @@ func handleTraffic(c *gin.Context) {
 		return
 	}
 
+	// 优先读取 X-Real-Ip header
+	realIP := c.GetHeader("X-Real-Ip")
+	if realIP == "" {
+		realIP = c.ClientIP()
+	}
+
 	// 构建请求数据
 	requestData := map[string]interface{}{
 		"timestamp":    time.Now(),
@@ -276,7 +282,7 @@ func handleTraffic(c *gin.Context) {
 		"headers":      c.Request.Header,
 		"query_params": c.Request.URL.Query(),
 		"raw_body":     string(bodyBytes),
-		"client_ip":    c.ClientIP(),
+		"client_ip":    realIP,
 		"user_agent":   c.Request.UserAgent(),
 	}
 
@@ -577,6 +583,8 @@ func hy2SyncOnce(cfg *database.Hy2Config) {
 		return
 	}
 	postReq.Header.Set("Content-Type", "application/json")
+	// 新增：带上真实IP
+	postReq.Header.Set("X-Real-Ip", cfg.SourceAPIHost)
 	postResp, err := client.Do(postReq)
 	if err != nil {
 		logger.Errorf("[HY2] 发送POST到目标API失败: %v", err)

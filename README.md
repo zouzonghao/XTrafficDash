@@ -58,6 +58,44 @@ services:
 
 - 改为自己服务器地址
 
+## 🚀 更新
+```bash
+# 1. 停止正在运行的容器，防止数据库写入冲突
+docker stop xtrafficdash
+
+# 2. 从容器中导出当前数据库文件到宿主机指定目录（备份）
+docker cp xtrafficdash:/app/data/xtrafficdash.db /usr/xtrafficdash/xtrafficdash.db
+
+# 3. 修改数据库文件权限，确保后续容器可读写
+chmod 666 /usr/xtrafficdash/xtrafficdash.db
+
+# 4. 删除旧容器（不会影响备份的数据库文件）
+docker rm xtrafficdash  
+
+# 5. 删除旧镜像（可选，确保拉取最新镜像）
+docker rmi sanqi37/xtrafficdash  
+
+# 6. 重新运行新容器，挂载数据库文件，并设置日志轮转
+docker run -d \
+  --name xtrafficdash \
+  -p 37022:37022 \
+  -e DATABASE_PATH=/app/data/xtrafficdash.db \
+  -e X_UI_PASSWORD=Zzh125475 \
+  --log-opt max-size=5m \
+  --log-opt max-file=3 \
+  --restart unless-stopped \
+  sanqi37/xtrafficdash
+
+# 7. （可选）再次停止新容器，导入备份的数据库文件
+docker stop xtrafficdash
+
+# 8. 将备份的数据库文件拷贝回新容器
+docker cp /usr/xtrafficdash/xtrafficdash.db xtrafficdash:/app/data/xtrafficdash.db
+
+# 9. 启动新容器，使用导入的数据库
+docker start xtrafficdash
+```
+
 ## 🛠️ 技术栈
 
 ### 后端
