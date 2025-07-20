@@ -293,7 +293,7 @@ func (d *Database) ProcessTrafficData(clientIP string, userAgent string, request
 		return fmt.Errorf("记录原始请求失败: %v", err)
 	}
 
-	// 3. 处理入站流量数据
+	// 3. 处理入站流量数据并记录有流量的端口
 	err = d.processInboundTraffics(tx, serviceID, trafficData.InboundTraffics)
 	if err != nil {
 		return fmt.Errorf("处理入站流量失败: %v", err)
@@ -354,6 +354,9 @@ func (d *Database) recordRawRequest(tx *sql.Tx, serviceID int, clientIP, userAge
 
 // 处理入站流量数据
 func (d *Database) processInboundTraffics(tx *sql.Tx, serviceID int, inboundTraffics []InboundTraffic) error {
+	// 记录有流量的端口信息
+	var activePorts []string
+
 	for _, traffic := range inboundTraffics {
 		// 只处理入站流量
 		if !traffic.IsInbound {
@@ -362,6 +365,14 @@ func (d *Database) processInboundTraffics(tx *sql.Tx, serviceID int, inboundTraf
 
 		// 解析端口号
 		port := d.extractPortFromTag(traffic.Tag)
+
+		// 如果有流量，记录端口信息
+		if traffic.Up > 0 || traffic.Down > 0 {
+			activePorts = append(activePorts, fmt.Sprintf("端口%d(上传:%s,下载:%s)",
+				port,
+				d.formatBytes(traffic.Up),
+				d.formatBytes(traffic.Down)))
+		}
 
 		// 获取或创建入站流量记录
 		var recordID int
@@ -391,6 +402,12 @@ func (d *Database) processInboundTraffics(tx *sql.Tx, serviceID int, inboundTraf
 			}
 		}
 	}
+
+	// 如果有活跃端口，输出日志
+	if len(activePorts) > 0 {
+		fmt.Printf("有流量的端口: %s\n", strings.Join(activePorts, ", "))
+	}
+
 	return nil
 }
 
@@ -514,6 +531,20 @@ func (d *Database) maskIPAddress(ip string) string {
 
 	// 如果无法解析，返回原IP
 	return ip
+}
+
+// 格式化字节数
+func (d *Database) formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // 获取服务汇总信息
