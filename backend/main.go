@@ -64,7 +64,20 @@ func getEnvAsBool(key string, defaultValue bool) bool {
 	return defaultValue
 }
 
+func setTimezone() {
+	tz := os.Getenv("TZ")
+	if tz == "" {
+		tz = "Asia/Shanghai"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		panic("无效的时区: " + tz)
+	}
+	time.Local = loc
+}
+
 func init() {
+	setTimezone()
 	// 初始化日志
 	logger = logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})

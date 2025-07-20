@@ -15,12 +15,13 @@
 
 ### docker run
 
-```
+```sh
 docker run -d \
   --name xtrafficdash \
   -p 37022:37022 \
   -e DATABASE_PATH=/app/data/xtrafficdash.db \
   -e X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} \
+  -e TZ=${TZ:-Asia/Shanghai} \
   --log-opt max-size=5m \
   --log-opt max-file=3 \
   --restart unless-stopped \
@@ -39,6 +40,7 @@ services:
     ports:
       - "37022:37022"
     environment:
+      - TZ=${TZ:-Asia/Shanghai}
       - DATABASE_PATH=/app/data/xtrafficdash.db
       - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} 
     logging:
@@ -58,16 +60,25 @@ services:
 
 - 改为自己服务器地址
 
+
+### hysteria2 接入
+
+#### 1. 修改配置文件
+   ```
+   nano /etc/hysteria/config.yaml
+   ```
+   添加
+
 ## 🚀 更新
 ```bash
 # 1. 停止正在运行的容器，防止数据库写入冲突
 docker stop xtrafficdash
 
 # 2. 从容器中导出当前数据库文件到宿主机指定目录（备份）
-docker cp xtrafficdash:/app/data/xtrafficdash.db /usr/xtrafficdash/xtrafficdash.db
+mkdir /usr/xtrafficdash/ && docker cp xtrafficdash:/app/data /usr/xtrafficdash/
 
 # 3. 修改数据库文件权限，确保后续容器可读写
-chmod 666 /usr/xtrafficdash/xtrafficdash.db
+chmod -R 666 /usr/xtrafficdash
 
 # 4. 删除旧容器（不会影响备份的数据库文件）
 docker rm xtrafficdash  
@@ -90,7 +101,7 @@ docker run -d \
 docker stop xtrafficdash
 
 # 8. 将备份的数据库文件拷贝回新容器
-docker cp /usr/xtrafficdash/xtrafficdash.db xtrafficdash:/app/data/xtrafficdash.db
+docker cp /usr/xtrafficdash/data xtrafficdash:/app/data
 
 # 9. 启动新容器，使用导入的数据库
 docker start xtrafficdash

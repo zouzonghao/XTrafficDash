@@ -234,7 +234,7 @@ func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
 
 	// 直接生成正确的顺序：6天前, 5天前, ..., 昨天, 今天
 	for i := 0; i < 7; i++ {
-		date := time.Now().AddDate(0, 0, -(6 - i))
+		date := time.Now().In(time.Local).AddDate(0, 0, -(6 - i))
 		dateStr := date.Format("2006-01-02")
 		dates[i] = dateStr
 		trafficData[dateStr] = map[string]int64{
@@ -306,7 +306,7 @@ func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
 	}
 
 	// 设置今日数据
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().In(time.Local).Format("2006-01-02")
 	if data, exists := trafficData[today]; exists {
 		data["upload"] = todayUp
 		data["download"] = todayDown
@@ -354,7 +354,7 @@ func (api *DatabaseAPI) GetMonthlyTraffic(c *gin.Context) {
 
 	// 直接生成正确的顺序：29天前, 28天前, ..., 昨天, 今天
 	for i := 0; i < 30; i++ {
-		date := time.Now().AddDate(0, 0, -(29 - i))
+		date := time.Now().In(time.Local).AddDate(0, 0, -(29 - i))
 		dateStr := date.Format("2006-01-02")
 		dates[i] = dateStr
 		trafficData[dateStr] = map[string]int64{
@@ -426,7 +426,7 @@ func (api *DatabaseAPI) GetMonthlyTraffic(c *gin.Context) {
 	}
 
 	// 设置今日数据
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().In(time.Local).Format("2006-01-02")
 	if data, exists := trafficData[today]; exists {
 		data["upload"] = todayUp
 		data["download"] = todayDown
@@ -471,7 +471,7 @@ func (api *DatabaseAPI) TriggerDailySummary(c *gin.Context) {
 		"success": true,
 		"message": "每日统计执行成功",
 		"data": gin.H{
-			"executed_at": time.Now().Format("2006-01-02 15:04:05"),
+			"executed_at": time.Now().In(time.Local).Format("2006-01-02 15:04:05"),
 		},
 	})
 }
@@ -1063,7 +1063,7 @@ func (api *DatabaseAPI) DownloadPortHistory(c *gin.Context) {
 	}
 
 	// 设置响应头
-	filename := fmt.Sprintf("端口历史数据_%s_%s_%s.csv", serviceName, tag, time.Now().Format("20060102"))
+	filename := fmt.Sprintf("端口历史数据_%s_%s_%s.csv", serviceName, tag, time.Now().In(time.Local).Format("20060102"))
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	c.Header("Content-Length", fmt.Sprintf("%d", len(csvContent)))
@@ -1178,7 +1178,7 @@ func (api *DatabaseAPI) DownloadUserHistory(c *gin.Context) {
 	}
 
 	// 设置响应头
-	filename := fmt.Sprintf("用户历史数据_%s_%s_%s.csv", serviceName, email, time.Now().Format("20060102"))
+	filename := fmt.Sprintf("用户历史数据_%s_%s_%s.csv", serviceName, email, time.Now().In(time.Local).Format("20060102"))
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	c.Header("Content-Length", fmt.Sprintf("%d", len(csvContent)))
