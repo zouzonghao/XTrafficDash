@@ -19,14 +19,13 @@
     </div>
 
     <div class="detail-container" v-if="portDetail">
-      <div class="detail-header">
-        <div class="detail-title">入站信息</div>
-        <button class="refresh-button" @click="refreshPortDetail">
-          刷新数据
-        </button>
-      </div>
-
       <div class="port-info">
+        <div class="detail-header">
+          <div class="detail-title">入站信息</div>
+          <button class="refresh-button" @click="refreshPortDetail">
+            刷新数据
+          </button>
+        </div>
         <div class="info-grid">
           <div class="info-item">
             <div class="info-label">服务IP</div>
@@ -51,30 +50,28 @@
         </div>
       </div>
 
-      <div class="chart-section">
-        <div class="chart-container">
-          <div class="chart-header">
-            <div class="section-title">历史流量趋势</div>
-            <div class="chart-controls">
-              <button 
-                class="chart-btn" 
-                :class="{ active: chartPeriod === '7d' }"
-                @click="switchChartPeriod('7d')"
-              >
-                7天
-              </button>
-              <button 
-                class="chart-btn" 
-                :class="{ active: chartPeriod === '30d' }"
-                @click="switchChartPeriod('30d')"
-              >
-                30天
-              </button>
-            </div>
+      <div class="chart-container">
+        <div class="chart-header">
+          <div class="section-title">历史流量趋势</div>
+          <div class="chart-controls">
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '7d' }"
+              @click="switchChartPeriod('7d')"
+            >
+              7天
+            </button>
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '30d' }"
+              @click="switchChartPeriod('30d')"
+            >
+              30天
+            </button>
           </div>
-          <div class="chart-content">
-            <canvas id="port-chart"></canvas>
-          </div>
+        </div>
+        <div class="chart-content">
+          <canvas id="port-chart"></canvas>
         </div>
       </div>
 
@@ -398,15 +395,19 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-  margin-bottom: 25px;
+.port-info {
   background: white;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  margin-bottom: 25px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
 }
 
 .info-item {
@@ -593,16 +594,12 @@ onUnmounted(() => {
 }
 
 /* 图表相关样式 */
-.chart-section {
-  margin-top: 25px;
-  margin-bottom: 25px;
-}
-
 .chart-container {
   background: white;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  margin-bottom: 25px;
 }
 
 .chart-header {
