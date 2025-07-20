@@ -7,6 +7,9 @@
 *.test
 *.out
 x-ui-panel
+# 可执行文件（无扩展名）
+xui_traffic_server
+main
 
 # 数据库文件
 *.db
