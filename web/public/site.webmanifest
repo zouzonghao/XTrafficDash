@@ -1,0 +1,16 @@
+{
+  "name": "XTrafficDash",
+  "short_name": "XTrafficDash",
+  "description": "3X-UI聚合监控面板",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "theme_color": "#3A77D9",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/"
+} 
