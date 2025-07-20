@@ -137,6 +137,7 @@ func main() {
 func setupRoutes(r *gin.Engine) {
 	// 健康检查
 	r.GET("/health", healthCheck)
+	r.GET("/api/health", healthCheck)
 
 	// 认证相关路由（不需要认证）
 	r.POST("/api/auth/login", database.HandleLogin)
