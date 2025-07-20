@@ -560,7 +560,8 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 	// 处理服务基本信息
 	for serviceRows.Next() {
 		var id int
-		var ipAddress, serviceName, customName, lastSeen, status string
+		var ipAddress, serviceName, lastSeen, status string
+		var customName sql.NullString
 
 		scanErr := serviceRows.Scan(&id, &ipAddress, &serviceName, &customName, &lastSeen, &status)
 		if scanErr != nil {
@@ -571,7 +572,7 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 			"id":                 id,
 			"ip_address":         d.maskIPAddress(ipAddress),
 			"service_name":       serviceName,
-			"custom_name":        customName,
+			"custom_name":        customName.String,
 			"last_seen":          lastSeen,
 			"status":             status,
 			"inbound_count":      0,
@@ -660,7 +661,8 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, error) {
 	// 获取服务基本信息
 	var service Service
-	var rawIPAddress, customName string
+	var rawIPAddress string
+	var customName sql.NullString
 	err := d.db.QueryRow(`
 		SELECT id, ip_address, service_name, custom_name, first_seen, last_seen, status
 		FROM services WHERE id = ?
@@ -687,14 +689,14 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 	var inboundTraffics []InboundTrafficRecord
 	for inboundRows.Next() {
 		var record InboundTrafficRecord
-		var customName string
+		var customName sql.NullString
 		err := inboundRows.Scan(&record.ID, &record.ServiceID, &record.Tag, &record.Port, &customName,
 			&record.Up, &record.Down, &record.LastUpdated, &record.Status)
 		if err != nil {
 			return nil, err
 		}
 		// 保存自定义名称
-		record.CustomName = customName
+		record.CustomName = customName.String
 		inboundTraffics = append(inboundTraffics, record)
 	}
 
@@ -712,14 +714,14 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 	var clientTraffics []ClientTrafficRecord
 	for clientRows.Next() {
 		var record ClientTrafficRecord
-		var customName string
+		var customName sql.NullString
 		err := clientRows.Scan(&record.ID, &record.ServiceID, &record.Email, &customName, &record.Up,
 			&record.Down, &record.LastUpdated, &record.Status)
 		if err != nil {
 			return nil, err
 		}
 		// 保存自定义名称
-		record.CustomName = customName
+		record.CustomName = customName.String
 		clientTraffics = append(clientTraffics, record)
 	}
 
