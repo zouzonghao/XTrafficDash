@@ -1,4 +1,4 @@
-module api-proxy-service
+module xtrafficdash
 
 go 1.21
 

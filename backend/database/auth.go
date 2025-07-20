@@ -41,7 +41,7 @@ func validatePassword(password string) bool {
 	envPassword := os.Getenv("X_UI_PASSWORD")
 	if envPassword == "" {
 		// 如果没有设置环境变量，使用默认密码
-		envPassword = "Zzh125475"
+		envPassword = "admin123"
 	}
 	return password == envPassword
 }

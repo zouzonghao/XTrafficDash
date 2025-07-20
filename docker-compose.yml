@@ -1,17 +1,17 @@
 version: '3.8'
 
 services:
-  x-ui-traffic:
+  xtrafficdash:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: x-ui-traffic-panel
+    container_name: xtrafficdash
     restart: unless-stopped
     ports:
       - "37022:37022"
     environment:
       - LISTEN_PORT=37022
-      - DATABASE_PATH=/app/data/xui_traffic.db
+      - DATABASE_PATH=/app/data/xtrafficdash.db
       - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}  # 如果不设置，默认是admin123
       - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -26,9 +26,9 @@ services:
 
 
 volumes:
-  xui_traffic_data:
+  xtrafficdash_data:
     driver: local
 
 networks:
-  xui_network:
+  xtrafficdash_network:
     driver: bridge 

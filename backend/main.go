@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"api-proxy-service/database"
+	"xtrafficdash/database"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -71,7 +71,7 @@ func init() {
 		ListenPort:   getEnvAsInt("LISTEN_PORT", 37022),
 		DebugMode:    getEnvAsBool("DEBUG_MODE", false),
 		LogLevel:     getEnv("LOG_LEVEL", "info"),
-		DatabasePath: getEnv("DATABASE_PATH", "xui_traffic.db"),
+		DatabasePath: getEnv("DATABASE_PATH", "xtrafficdash.db"),
 	}
 
 	// 设置日志级别
@@ -102,7 +102,7 @@ func init() {
 }
 
 func main() {
-	logger.Info("启动X-UI流量统计面板...")
+	logger.Info("启动XTrafficDash...")
 	logger.Infof("监听端口: %d", config.ListenPort)
 	logger.Infof("数据库路径: %s", config.DatabasePath)
 

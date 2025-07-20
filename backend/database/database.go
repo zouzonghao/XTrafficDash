@@ -164,7 +164,7 @@ func (d *Database) Close() error {
 func initDatabase(db *sql.DB) error {
 	// 读取SQL文件内容
 	schemaSQL := `
-	-- X-UI 流量数据数据库表结构
+	-- XTrafficDash 流量数据数据库表结构
 	-- 创建时间: 2024-01-01
 	-- 描述: 存储X-UI服务的流量数据，包括入站流量和客户端流量
 
@@ -326,7 +326,7 @@ func (d *Database) getOrCreateService(tx *sql.Tx, ipAddress string) (int, error)
 		result, err := tx.Exec(`
 			INSERT INTO services (ip_address, service_name, first_seen, last_seen, status)
 			VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'active')
-		`, ipAddress, fmt.Sprintf("X-UI-Service-%s", ipAddress))
+		`, ipAddress, fmt.Sprintf("XTrafficDash-Service-%s", ipAddress))
 		if err != nil {
 			return 0, err
 		}
@@ -405,7 +405,7 @@ func (d *Database) processInboundTraffics(tx *sql.Tx, serviceID int, inboundTraf
 
 	// 如果有活跃端口，输出日志
 	if len(activePorts) > 0 {
-		fmt.Printf("有流量的端口: %s\n", strings.Join(activePorts, ", "))
+		fmt.Printf("活跃端口: %s\n", strings.Join(activePorts, ", "))
 	}
 
 	return nil

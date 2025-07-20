@@ -1,4 +1,4 @@
-# X-UI 流量统计面板
+# XTrafficDash
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org/)
 [![Vue Version](https://img.shields.io/badge/Vue-3.0+-green.svg)](https://vuejs.org/)
@@ -17,15 +17,15 @@
 
 ```
 docker run -d \
-  --name x-ui-traffic-panel \
+  --name xtrafficdash \
   -p 37022:37022 \
   -e LISTEN_PORT=37022 \
-  -e DATABASE_PATH=/app/data/xui_traffic.db \
+  -e DATABASE_PATH=/app/data/xtrafficdash.db \
   -e X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} \
   -e DEBUG_MODE=${DEBUG_MODE:-false} \
   -e LOG_LEVEL=${LOG_LEVEL:-info} \
   --restart unless-stopped \
-  sanqi37/x-ui-panel
+  sanqi37/xtrafficdash
 ```
 ### docker compose 部署
 
@@ -33,15 +33,15 @@ docker run -d \
 version: '3.8'
 
 services:
-  x-ui-traffic:
-    image: sanqi37/x-ui-panel 
-    container_name: x-ui-traffic-panel
+  xtrafficdash:
+    image: sanqi37/xtrafficdash 
+    container_name: xtrafficdash
     restart: unless-stopped
     ports:
       - "37022:37022"
     environment:
       - LISTEN_PORT=37022
-      - DATABASE_PATH=/app/data/xui_traffic.db
+      - DATABASE_PATH=/app/data/xtrafficdash.db
       - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} # 
       - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -77,7 +77,7 @@ services:
 ## 🏗️ 项目结构
 
 ```
-x-ui-panel/
+xtrafficdash/
 ├── backend/              # Go后端代码
 │   ├── main.go          # 主程序入口
 │   ├── database/        # 数据库相关代码
@@ -117,7 +117,7 @@ x-ui-panel/
 ```bash
 # 1. 克隆项目
 git clone <repository-url>
-cd x-ui-panel
+cd xtrafficdash
 
 # 2. 配置环境变量
 cp configs/env.example configs/.env
@@ -156,12 +156,12 @@ cd backend
 go build -o main main.go
 
 # 或者指定输出文件名
-go build -o xui_traffic_server main.go
+go build -o xtrafficdash main.go
 
 # 运行编译后的程序
 ./main
 # 或
-./xui_traffic_server
+./xtrafficdash
 ```
 
 ## 🔧 配置说明
@@ -174,7 +174,7 @@ go build -o xui_traffic_server main.go
 | `LISTEN_PORT` | `37022` | 服务监听端口 |
 | `DEBUG_MODE` | `true` | 调试模式 |
 | `LOG_LEVEL` | `info` | 日志级别 |
-| `DATABASE_PATH` | `xui_traffic.db` | 数据库文件路径 |
+| `DATABASE_PATH` | `xtrafficdash.db` | 数据库文件路径 |
 
 ### Docker配置
 

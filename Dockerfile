@@ -57,7 +57,7 @@ RUN mkdir -p /app/data && \
 USER appuser
 
 # 设置环境变量
-ENV DATABASE_PATH=/app/data/xui_traffic.db
+ENV DATABASE_PATH=/app/data/xtrafficdash.db
 ENV X_UI_PASSWORD=admin123
 ENV LISTEN_PORT=37022
 ENV DEBUG_MODE=true

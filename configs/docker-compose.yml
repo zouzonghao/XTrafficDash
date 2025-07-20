@@ -1,16 +1,16 @@
 version: '3.8'
 
 services:
-  x-ui-panel:
+  xtrafficdash:
     build: 
       context: ..
       dockerfile: Dockerfile
-    container_name: x-ui-panel
+    container_name: xtrafficdash
     ports:
       - "37022:37022"
     environment:
       - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}
-      - DATABASE_PATH=/app/data/xui_traffic.db
+      - DATABASE_PATH=/app/data/xtrafficdash.db
       - DEBUG_MODE=${DEBUG_MODE:-true}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - LISTEN_PORT=37022

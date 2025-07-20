@@ -6,9 +6,9 @@
 *.dylib
 *.test
 *.out
-x-ui-panel
+xtrafficdash
 # 可执行文件（无扩展名）
-xui_traffic_server
+xtrafficdash
 main
 
 # 数据库文件

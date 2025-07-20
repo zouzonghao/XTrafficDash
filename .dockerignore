@@ -71,7 +71,7 @@ screenshots/
 *.gif
 
 # Binary files
-x-ui-panel
+xtrafficdash
 *.exe
 *.dll
 *.so
