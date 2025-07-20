@@ -153,8 +153,30 @@ func setupRoutes(r *gin.Engine) {
 	}
 
 	// 静态文件服务（用于前端）
-	r.Static("/assets", "/app/web/dist/assets")
-	r.StaticFile("/", "/app/web/dist/index.html")
+	// 尝试多个可能的路径
+	webDistPaths := []string{
+		"../web/dist",   // 开发环境（从backend目录运行）
+		"./web/dist",    // 开发环境（从项目根目录运行）
+		"/app/web/dist", // Docker环境
+	}
+
+	var webDistPath string
+	for _, path := range webDistPaths {
+		if _, err := os.Stat(path); err == nil {
+			webDistPath = path
+			logger.Infof("找到web/dist目录: %s", path)
+			break
+		}
+	}
+
+	if webDistPath != "" {
+		r.Static("/assets", webDistPath+"/assets")
+		r.StaticFile("/", webDistPath+"/index.html")
+		r.StaticFile("/favicon.svg", webDistPath+"/favicon.svg")
+		r.StaticFile("/site.webmanifest", webDistPath+"/site.webmanifest")
+	} else {
+		logger.Warn("未找到web/dist目录，静态文件服务将不可用")
+	}
 
 	// 添加调试路由
 	r.GET("/debug", func(c *gin.Context) {
