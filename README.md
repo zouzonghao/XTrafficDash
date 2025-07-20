@@ -148,6 +148,22 @@ npm run dev
 # 打开浏览器访问: http://localhost:3000
 ```
 
+### 编译可执行文件
+
+```bash
+# 编译后端服务
+cd backend
+go build -o main main.go
+
+# 或者指定输出文件名
+go build -o xui_traffic_server main.go
+
+# 运行编译后的程序
+./main
+# 或
+./xui_traffic_server
+```
+
 ## 🔧 配置说明
 
 ### 环境变量
