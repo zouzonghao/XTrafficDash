@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 
-一个现代化的X-UI流量统计面板，使用Vue3 + Go构建，支持多服务器流量监控和可视化。
+一个现代化的3X-UI流量统计面板，使用Vue3 + Go构建，支持多服务器流量监控和可视化。
 
 
 
