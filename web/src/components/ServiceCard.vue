@@ -73,6 +73,7 @@ import { formatBytes } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
 import EditNameModal from './EditNameModal.vue'
+import { useServicesStore } from '../stores/services'
 
 const props = defineProps({
   service: {
@@ -107,6 +108,11 @@ const saveName = async (newName) => {
     if (response.data.success) {
       // 更新本地数据
       props.service.custom_name = newName
+      // 如果当前选中的服务就是这个服务，也要更新store中的数据
+      const servicesStore = useServicesStore()
+      if (servicesStore.selectedService && servicesStore.selectedService.id === props.service.id) {
+        servicesStore.selectedService.custom_name = newName
+      }
       showEditModal.value = false
     } else {
       alert('保存失败: ' + response.data.error)

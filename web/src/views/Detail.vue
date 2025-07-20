@@ -5,7 +5,7 @@
     </button>
 
     <div class="header">
-      <h1>{{ selectedService?.ip_address }}</h1>
+      <h1>{{ selectedService?.custom_name || selectedService?.ip_address }}</h1>
       <p>服务今日流量详情</p>
     </div>
 
@@ -164,6 +164,13 @@ const saveInboundName = async (newName) => {
     )
     if (response.data.success) {
       currentEditingInbound.value.custom_name = newName
+      // 同时更新selectedService中对应的端口数据
+      const inboundInService = selectedService.value.inbound_traffics.find(
+        i => i.tag === currentEditingInbound.value.tag
+      )
+      if (inboundInService) {
+        inboundInService.custom_name = newName
+      }
       showInboundModal.value = false
     } else {
       alert('保存失败: ' + response.data.error)
@@ -194,6 +201,13 @@ const saveClientName = async (newName) => {
     )
     if (response.data.success) {
       currentEditingClient.value.custom_name = newName
+      // 同时更新selectedService中对应的用户数据
+      const clientInService = selectedService.value.client_traffics.find(
+        c => c.email === currentEditingClient.value.email
+      )
+      if (clientInService) {
+        clientInService.custom_name = newName
+      }
       showClientModal.value = false
     } else {
       alert('保存失败: ' + response.data.error)

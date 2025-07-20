@@ -5,7 +5,16 @@
     </button>
 
     <div class="header">
-      <h1>{{ userDetail?.user_info?.email }}</h1>
+      <h1>
+        {{ userDetail?.user_info?.custom_name || userDetail?.user_info?.email }}
+        <button 
+          class="edit-icon" 
+          @click="startEditUserName"
+          title="编辑用户名称"
+        >
+          ✏️
+        </button>
+      </h1>
       <p>用户历史流量详情</p>
     </div>
 
@@ -101,6 +110,17 @@
       </div>
     </div>
   </div>
+  
+  <!-- 编辑用户名称弹窗 -->
+  <EditNameModal
+    v-model:visible="showEditModal"
+    :value="currentEditingValue"
+    title="编辑用户名称"
+    label="用户名称"
+    placeholder="请输入用户名称"
+    @save="saveUserName"
+    @close="closeModal"
+  />
 </template>
 
 <script setup>
@@ -110,6 +130,7 @@ import { useServicesStore } from '../stores/services'
 import { formatBytes, formatDate, formatDateTime } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
+import EditNameModal from '../components/EditNameModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -118,6 +139,11 @@ const servicesStore = useServicesStore()
 const userDetail = ref(null)
 const currentHistoryPage = ref(1)
 const historyPageSize = 20
+
+// 弹窗相关状态
+const showEditModal = ref(false)
+const currentEditingValue = ref('')
+
 const selectedService = computed(() => servicesStore.selectedService)
 
 let userChart = null
@@ -290,6 +316,35 @@ const viewPortDetail = (serviceId, tag) => {
 
 const changeHistoryPage = (page) => {
   currentHistoryPage.value = page
+}
+
+// 编辑用户名称
+const startEditUserName = () => {
+  currentEditingValue.value = userDetail.value?.user_info?.custom_name || userDetail.value?.user_info?.email
+  showEditModal.value = true
+}
+
+const saveUserName = async (newName) => {
+  try {
+    const response = await servicesAPI.updateClientCustomName(
+      route.params.serviceId,
+      userDetail.value.user_info.email,
+      newName
+    )
+    if (response.data.success) {
+      userDetail.value.user_info.custom_name = newName
+      showEditModal.value = false
+    } else {
+      alert('保存失败: ' + response.data.error)
+    }
+  } catch (error) {
+    console.error('保存用户名称失败:', error)
+    alert('保存失败: ' + error.message)
+  }
+}
+
+const closeModal = () => {
+  showEditModal.value = false
 }
 
 onMounted(async () => {
@@ -469,5 +524,21 @@ onUnmounted(() => {
   padding: 6px 12px;
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.edit-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.edit-icon:hover {
+  background: rgba(52, 152, 219, 0.1);
 }
 </style> 

@@ -5,7 +5,16 @@
     </button>
 
     <div class="header">
-      <h1>{{ portDetail?.port_info?.tag }}</h1>
+      <h1>
+        {{ portDetail?.port_info?.custom_name || portDetail?.port_info?.tag }}
+        <button 
+          class="edit-icon" 
+          @click="startEditPortName"
+          title="编辑端口名称"
+        >
+          ✏️
+        </button>
+      </h1>
       <p>端口历史流量详情</p>
     </div>
 
@@ -94,6 +103,17 @@
 
     </div>
   </div>
+  
+  <!-- 编辑端口名称弹窗 -->
+  <EditNameModal
+    v-model:visible="showEditModal"
+    :value="currentEditingValue"
+    title="编辑端口名称"
+    label="端口名称"
+    placeholder="请输入端口名称"
+    @save="savePortName"
+    @close="closeModal"
+  />
 </template>
 
 <script setup>
@@ -102,6 +122,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
 import { formatBytes, formatDate, formatDateTime } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
+import EditNameModal from '../components/EditNameModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -110,6 +131,10 @@ const servicesStore = useServicesStore()
 const portDetail = ref(null)
 const currentHistoryPage = ref(1)
 const historyPageSize = 20
+
+// 弹窗相关状态
+const showEditModal = ref(false)
+const currentEditingValue = ref('')
 
 const selectedService = computed(() => servicesStore.selectedService)
 
@@ -154,6 +179,35 @@ const refreshPortDetail = async () => {
 
 const backToDetail = () => {
   router.push(`/detail/${route.params.serviceId}`)
+}
+
+// 编辑端口名称
+const startEditPortName = () => {
+  currentEditingValue.value = portDetail.value?.port_info?.custom_name || portDetail.value?.port_info?.tag
+  showEditModal.value = true
+}
+
+const savePortName = async (newName) => {
+  try {
+    const response = await servicesAPI.updateInboundCustomName(
+      route.params.serviceId,
+      portDetail.value.port_info.tag,
+      newName
+    )
+    if (response.data.success) {
+      portDetail.value.port_info.custom_name = newName
+      showEditModal.value = false
+    } else {
+      alert('保存失败: ' + response.data.error)
+    }
+  } catch (error) {
+    console.error('保存端口名称失败:', error)
+    alert('保存失败: ' + error.message)
+  }
+}
+
+const closeModal = () => {
+  showEditModal.value = false
 }
 
 
@@ -334,5 +388,19 @@ onMounted(async () => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.edit-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+  vertical-align: middle;
+}
 
+.edit-icon:hover {
+  background: rgba(52, 152, 219, 0.1);
+}
 </style> 
