@@ -32,7 +32,7 @@
     <div v-if="showDeleteModal" class="modal-overlay" @click="hideDeleteConfirm">
       <div class="modal" @click.stop>
         <h3>确认删除</h3>
-        <p>您确定要删除服务 <strong>{{ serviceToDelete?.ip_address }}</strong> 吗？</p>
+        <p>您确定要删除服务 <strong>{{ serviceToDelete?.custom_name || serviceToDelete?.ip_address }}</strong> 吗？</p>
         <p class="warning-text">此操作将删除该服务的所有数据，包括流量记录和历史数据，且无法恢复。</p>
         <div class="modal-buttons">
           <button class="modal-button cancel" @click="hideDeleteConfirm">取消</button>
