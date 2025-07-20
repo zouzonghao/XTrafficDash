@@ -93,8 +93,11 @@
         </div>
       </div>
 
-      <div class="chart-container" style="height: 400px;">
-        <canvas id="detail-chart"></canvas>
+      <div class="chart-section">
+        <div class="section-title">历史流量趋势</div>
+        <div class="chart-container">
+          <canvas id="detail-chart"></canvas>
+        </div>
       </div>
     </div>
   </div>
@@ -443,5 +446,23 @@ onUnmounted(() => {
   background: rgba(52, 152, 219, 0.1);
 }
 
+.chart-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  margin-top: 25px;
+}
 
+.section-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin-bottom: 16px;
+  color: #2c3e50;
+}
+
+.chart-container {
+  height: 400px;
+  position: relative;
+}
 </style> 

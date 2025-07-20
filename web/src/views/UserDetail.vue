@@ -58,7 +58,8 @@
 
       <div class="history-section">
         <div class="section-title">历史流量数据</div>
-        <div class="history-table">
+        <div class="history-container">
+          <div class="history-table">
           <div class="table-header">
             <div class="header-cell date-col">日期</div>
             <div class="header-cell traffic-col">上传流量</div>
@@ -103,10 +104,14 @@
             下一页
           </button>
         </div>
+        </div>
       </div>
 
-      <div class="chart-container" style="height: 400px;">
-        <canvas id="user-chart"></canvas>
+      <div class="chart-section">
+        <div class="section-title">历史流量趋势</div>
+        <div class="chart-container">
+          <canvas id="user-chart"></canvas>
+        </div>
       </div>
     </div>
   </div>
@@ -397,6 +402,13 @@ onUnmounted(() => {
   color: #495057;
 }
 
+.history-container {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
 .history-table {
   background: white;
   border-radius: 8px;
@@ -540,5 +552,18 @@ onUnmounted(() => {
 
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
+}
+
+.chart-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  margin-top: 25px;
+}
+
+.chart-container {
+  height: 400px;
+  position: relative;
 }
 </style> 

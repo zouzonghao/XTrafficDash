@@ -53,7 +53,8 @@
 
       <div class="history-section">
         <div class="section-title">历史流量数据</div>
-        <div class="history-table">
+        <div class="history-container">
+          <div class="history-table">
           <div class="table-header">
             <div class="header-cell date-col">日期</div>
             <div class="header-cell traffic-col">上传流量</div>
@@ -97,6 +98,7 @@
           >
             下一页
           </button>
+        </div>
         </div>
       </div>
 
@@ -257,6 +259,13 @@ onMounted(async () => {
   font-weight: 600;
   margin-bottom: 12px;
   color: #495057;
+}
+
+.history-container {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
 
 .history-table {
