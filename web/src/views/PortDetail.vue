@@ -268,6 +268,12 @@ const createPortChart = async () => {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: {
+          padding: {
+            top: 10,
+            bottom: 10
+          }
+        },
         plugins: {
           legend: {
             display: true,
@@ -639,5 +645,11 @@ onUnmounted(() => {
 .chart-content {
   height: 300px;
   position: relative;
+  width: 100%;
+}
+
+.chart-content canvas {
+  width: 100% !important;
+  height: 100% !important;
 }
 </style> 
