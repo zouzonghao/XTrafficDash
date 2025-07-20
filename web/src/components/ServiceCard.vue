@@ -11,39 +11,16 @@
     <div class="card-header">
       <div class="ip-address">
         <div class="name-container">
-          <span v-if="!isEditingName" class="display-name">
+          <span class="display-name">
             {{ displayName }}
             <button 
               class="edit-icon" 
-              @click.stop="startEditName"
+              @click.stop="openEditModal"
               title="编辑名称"
             >
               ✏️
             </button>
           </span>
-          <div v-else class="edit-container">
-            <input 
-              v-model="editingName" 
-              @keyup.enter="saveName"
-              @blur="handleBlur"
-              class="edit-input"
-              ref="nameInput"
-            />
-            <button 
-              class="save-button" 
-              @click.stop="saveName"
-              title="确认"
-            >
-              确认
-            </button>
-            <button 
-              class="cancel-button" 
-              @click.stop="cancelEditName"
-              title="取消"
-            >
-              取消
-            </button>
-          </div>
         </div>
         <span 
           class="status-badge" 
@@ -77,13 +54,25 @@
       <canvas :id="'chart-' + service.id"></canvas>
     </div>
   </div>
+  
+  <!-- 编辑名称弹窗 -->
+  <EditNameModal
+    v-model:visible="showEditModal"
+    :value="currentEditingValue"
+    title="编辑节点名称"
+    label="节点名称"
+    placeholder="请输入节点名称"
+    @save="saveName"
+    @close="closeModal"
+  />
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, computed, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { formatBytes } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
+import EditNameModal from './EditNameModal.vue'
 
 const props = defineProps({
   service: {
@@ -96,33 +85,29 @@ defineEmits(['select', 'delete'])
 
 let chart = null
 
-// 编辑名称相关状态
-const isEditingName = ref(false)
-const editingName = ref('')
-const nameInput = ref(null)
+// 弹窗相关状态
+const showEditModal = ref(false)
+const currentEditingValue = ref('')
 
 // 计算显示名称
 const displayName = computed(() => {
   return props.service.custom_name || props.service.ip_address
 })
 
-// 开始编辑名称
-const startEditName = () => {
-  editingName.value = props.service.custom_name || props.service.ip_address
-  isEditingName.value = true
-  nextTick(() => {
-    nameInput.value?.focus()
-  })
+// 打开编辑弹窗
+const openEditModal = () => {
+  currentEditingValue.value = props.service.custom_name || props.service.ip_address
+  showEditModal.value = true
 }
 
 // 保存名称
-const saveName = async () => {
+const saveName = async (newName) => {
   try {
-    const response = await servicesAPI.updateServiceCustomName(props.service.id, editingName.value)
+    const response = await servicesAPI.updateServiceCustomName(props.service.id, newName)
     if (response.data.success) {
       // 更新本地数据
-      props.service.custom_name = editingName.value
-      isEditingName.value = false
+      props.service.custom_name = newName
+      showEditModal.value = false
     } else {
       alert('保存失败: ' + response.data.error)
     }
@@ -132,24 +117,9 @@ const saveName = async () => {
   }
 }
 
-// 取消编辑
-const cancelEditName = () => {
-  isEditingName.value = false
-  editingName.value = ''
-}
-
-// 处理失去焦点事件
-const handleBlur = (event) => {
-  // 延迟执行，避免与按钮点击冲突
-  setTimeout(() => {
-    // 检查是否点击了保存或取消按钮
-    const relatedTarget = event.relatedTarget
-    if (relatedTarget && (relatedTarget.classList.contains('save-button') || relatedTarget.classList.contains('cancel-button'))) {
-      return
-    }
-    // 如果没有点击按钮，则取消编辑
-    cancelEditName()
-  }, 100)
+// 关闭弹窗
+const closeModal = () => {
+  showEditModal.value = false
 }
 
 const createChart = async () => {
@@ -278,59 +248,5 @@ onUnmounted(() => {
 
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
-}
-
-.save-button, .cancel-button {
-  background: none;
-  border: 1px solid #ddd;
-  cursor: pointer;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 3px;
-  transition: all 0.2s ease;
-  color: #2c3e50;
-}
-
-.save-button {
-  background: #27ae60;
-  color: white;
-  border-color: #27ae60;
-}
-
-.save-button:hover {
-  background: #229954;
-  border-color: #229954;
-}
-
-.cancel-button {
-  background: #ecf0f1;
-  border-color: #bdc3c7;
-}
-
-.cancel-button:hover {
-  background: #d5dbdb;
-  border-color: #95a5a6;
-}
-
-.edit-container {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.edit-input {
-  border: 1px solid #3498db;
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 14px;
-  background: white;
-  color: #2c3e50;
-  min-width: 120px;
-}
-
-.edit-input:focus {
-  outline: none;
-  border-color: #2980b9;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
 }
 </style> 

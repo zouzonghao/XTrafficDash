@@ -30,7 +30,7 @@
                 class="table-label clickable" 
                 @click="viewPortDetail(selectedService.id, inbound.tag)"
               >
-                <span v-if="!inbound.isEditing" class="display-name">
+                <span class="display-name">
                   {{ inbound.custom_name || inbound.tag }}
                   <button 
                     class="edit-icon" 
@@ -40,29 +40,6 @@
                     ✏️
                   </button>
                 </span>
-                <div v-else class="edit-container">
-                  <input 
-                    v-model="inbound.editingName" 
-                    @keyup.enter="saveInboundName(inbound)"
-                    @blur="handleInboundBlur($event, inbound)"
-                    class="edit-input"
-                    ref="inboundInput"
-                  />
-                  <button 
-                    class="save-button" 
-                    @click.stop="saveInboundName(inbound)"
-                    title="确认"
-                  >
-                    确认
-                  </button>
-                  <button 
-                    class="cancel-button" 
-                    @click.stop="cancelEditInbound(inbound)"
-                    title="取消"
-                  >
-                    取消
-                  </button>
-                </div>
               </div>
             </div>
             <div class="table-value">
@@ -90,7 +67,7 @@
                 class="table-label clickable" 
                 @click="viewUserDetail(selectedService.id, client.email)"
               >
-                <span v-if="!client.isEditing" class="display-name">
+                <span class="display-name">
                   {{ client.custom_name || client.email }}
                   <button 
                     class="edit-icon" 
@@ -100,29 +77,6 @@
                     ✏️
                   </button>
                 </span>
-                <div v-else class="edit-container">
-                  <input 
-                    v-model="client.editingName" 
-                    @keyup.enter="saveClientName(client)"
-                    @blur="handleClientBlur($event, client)"
-                    class="edit-input"
-                    ref="clientInput"
-                  />
-                  <button 
-                    class="save-button" 
-                    @click.stop="saveClientName(client)"
-                    title="确认"
-                  >
-                    确认
-                  </button>
-                  <button 
-                    class="cancel-button" 
-                    @click.stop="cancelEditClient(client)"
-                    title="取消"
-                  >
-                    取消
-                  </button>
-                </div>
               </div>
             </div>
             <div class="table-value">
@@ -144,15 +98,38 @@
       </div>
     </div>
   </div>
+  
+  <!-- 编辑端口名称弹窗 -->
+  <EditNameModal
+    v-model:visible="showInboundModal"
+    :value="currentEditingValue"
+    title="编辑端口名称"
+    label="端口名称"
+    placeholder="请输入端口名称"
+    @save="saveInboundName"
+    @close="closeInboundModal"
+  />
+  
+  <!-- 编辑用户名称弹窗 -->
+  <EditNameModal
+    v-model:visible="showClientModal"
+    :value="currentEditingValue"
+    title="编辑用户名称"
+    label="用户名称"
+    placeholder="请输入用户名称"
+    @save="saveClientName"
+    @close="closeClientModal"
+  />
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, computed, ref, nextTick } from 'vue'
+import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
 import { formatBytes } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
+import EditNameModal from '../components/EditNameModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -164,31 +141,30 @@ let detailChart = null
 let refreshInterval = null
 const isRefreshing = ref(false)
 
+// 弹窗相关状态
+const showInboundModal = ref(false)
+const showClientModal = ref(false)
+const currentEditingInbound = ref(null)
+const currentEditingClient = ref(null)
+const currentEditingValue = ref('')
+
 // 编辑相关函数
 const startEditInbound = (inbound) => {
-  inbound.isEditing = true
-  inbound.editingName = inbound.custom_name || inbound.tag
-  nextTick(() => {
-    // 找到对应的输入框并聚焦
-    const inputs = document.querySelectorAll('.edit-input')
-    inputs.forEach(input => {
-      if (input.value === inbound.editingName) {
-        input.focus()
-      }
-    })
-  })
+  currentEditingInbound.value = inbound
+  currentEditingValue.value = inbound.custom_name || inbound.tag
+  showInboundModal.value = true
 }
 
-const saveInboundName = async (inbound) => {
+const saveInboundName = async (newName) => {
   try {
     const response = await servicesAPI.updateInboundCustomName(
       selectedService.value.id, 
-      inbound.tag, 
-      inbound.editingName
+      currentEditingInbound.value.tag, 
+      newName
     )
     if (response.data.success) {
-      inbound.custom_name = inbound.editingName
-      inbound.isEditing = false
+      currentEditingInbound.value.custom_name = newName
+      showInboundModal.value = false
     } else {
       alert('保存失败: ' + response.data.error)
     }
@@ -198,35 +174,27 @@ const saveInboundName = async (inbound) => {
   }
 }
 
-const cancelEditInbound = (inbound) => {
-  inbound.isEditing = false
-  inbound.editingName = ''
+const closeInboundModal = () => {
+  showInboundModal.value = false
+  currentEditingInbound.value = null
 }
 
 const startEditClient = (client) => {
-  client.isEditing = true
-  client.editingName = client.custom_name || client.email
-  nextTick(() => {
-    // 找到对应的输入框并聚焦
-    const inputs = document.querySelectorAll('.edit-input')
-    inputs.forEach(input => {
-      if (input.value === client.editingName) {
-        input.focus()
-      }
-    })
-  })
+  currentEditingClient.value = client
+  currentEditingValue.value = client.custom_name || client.email
+  showClientModal.value = true
 }
 
-const saveClientName = async (client) => {
+const saveClientName = async (newName) => {
   try {
     const response = await servicesAPI.updateClientCustomName(
       selectedService.value.id, 
-      client.email, 
-      client.editingName
+      currentEditingClient.value.email, 
+      newName
     )
     if (response.data.success) {
-      client.custom_name = client.editingName
-      client.isEditing = false
+      currentEditingClient.value.custom_name = newName
+      showClientModal.value = false
     } else {
       alert('保存失败: ' + response.data.error)
     }
@@ -236,31 +204,9 @@ const saveClientName = async (client) => {
   }
 }
 
-const cancelEditClient = (client) => {
-  client.isEditing = false
-  client.editingName = ''
-}
-
-// 处理入站流量失去焦点事件
-const handleInboundBlur = (event, inbound) => {
-  setTimeout(() => {
-    const relatedTarget = event.relatedTarget
-    if (relatedTarget && (relatedTarget.classList.contains('save-button') || relatedTarget.classList.contains('cancel-button'))) {
-      return
-    }
-    cancelEditInbound(inbound)
-  }, 100)
-}
-
-// 处理客户端失去焦点事件
-const handleClientBlur = (event, client) => {
-  setTimeout(() => {
-    const relatedTarget = event.relatedTarget
-    if (relatedTarget && (relatedTarget.classList.contains('save-button') || relatedTarget.classList.contains('cancel-button'))) {
-      return
-    }
-    cancelEditClient(client)
-  }, 100)
+const closeClientModal = () => {
+  showClientModal.value = false
+  currentEditingClient.value = null
 }
 
 const createDetailChart = async () => {
@@ -483,57 +429,5 @@ onUnmounted(() => {
   background: rgba(52, 152, 219, 0.1);
 }
 
-.save-button, .cancel-button {
-  background: none;
-  border: 1px solid #ddd;
-  cursor: pointer;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  transition: all 0.2s ease;
-  color: #2c3e50;
-}
 
-.save-button {
-  background: #27ae60;
-  color: white;
-  border-color: #27ae60;
-}
-
-.save-button:hover {
-  background: #229954;
-  border-color: #229954;
-}
-
-.cancel-button {
-  background: #ecf0f1;
-  border-color: #bdc3c7;
-}
-
-.cancel-button:hover {
-  background: #d5dbdb;
-  border-color: #95a5a6;
-}
-
-.edit-container {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.edit-input {
-  border: 1px solid #3498db;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 12px;
-  background: white;
-  color: #2c3e50;
-  min-width: 100px;
-}
-
-.edit-input:focus {
-  outline: none;
-  border-color: #2980b9;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
-}
 </style> 
