@@ -1,7 +1,7 @@
 <template>
   <div class="container">
     <button class="back-button" @click="backToDetail">
-      ← 返回详情页
+      ← 返回节点详情
     </button>
 
     <div class="header">
@@ -10,17 +10,17 @@
         <button 
           class="edit-icon" 
           @click="startEditPortName"
-          title="编辑端口名称"
+          title="编辑入站名称"
         >
           ✏️
         </button>
       </h1>
-      <p>端口历史流量详情</p>
+      <p>入站详情</p>
     </div>
 
     <div class="detail-container" v-if="portDetail">
       <div class="detail-header">
-        <div class="detail-title">端口信息</div>
+        <div class="detail-title">入站信息</div>
         <button class="refresh-button" @click="refreshPortDetail">
           刷新数据
         </button>
@@ -48,6 +48,31 @@
             <div class="info-label">最后活跃</div>
             <div class="info-value">{{ formatDateTime(portDetail.port_info.last_seen) }}</div>
           </div>
+        </div>
+      </div>
+
+      <div class="chart-section">
+        <div class="chart-header">
+          <div class="section-title">历史流量趋势</div>
+          <div class="chart-controls">
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '7d' }"
+              @click="switchChartPeriod('7d')"
+            >
+              7天
+            </button>
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '30d' }"
+              @click="switchChartPeriod('30d')"
+            >
+              30天
+            </button>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="port-chart"></canvas>
         </div>
       </div>
 
@@ -119,11 +144,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
 import { formatBytes, formatDate, formatDateTime } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
+import Chart from 'chart.js/auto'
 import EditNameModal from '../components/EditNameModal.vue'
 
 const route = useRoute()
@@ -133,6 +159,8 @@ const servicesStore = useServicesStore()
 const portDetail = ref(null)
 const currentHistoryPage = ref(1)
 const historyPageSize = 20
+let portChart = null
+const chartPeriod = ref('7d') // 图表周期：7d 或 30d
 
 // 弹窗相关状态
 const showEditModal = ref(false)
@@ -159,16 +187,18 @@ const totalHistoryPages = computed(() => {
   return Math.ceil(portDetail.value.history.length / historyPageSize)
 })
 
-const loadPortDetail = async () => {
+const loadPortDetail = async (days = 7) => {
   try {
     const serviceId = route.params.serviceId
     const tag = route.params.tag
-    const response = await servicesAPI.getPortDetail(serviceId, tag)
+    const response = await servicesAPI.getPortDetail(serviceId, tag, days)
     
     if (response.data.success) {
       portDetail.value = response.data.data
       // 重置分页
       currentHistoryPage.value = 1
+      // 更新图表
+      updateChart()
     }
   } catch (error) {
     console.error('获取端口详情失败:', error)
@@ -176,7 +206,90 @@ const loadPortDetail = async () => {
 }
 
 const refreshPortDetail = async () => {
-  await loadPortDetail()
+  const days = chartPeriod.value === '7d' ? 7 : 30
+  await loadPortDetail(days)
+}
+
+// 切换图表周期
+const switchChartPeriod = async (period) => {
+  chartPeriod.value = period
+  const days = period === '7d' ? 7 : 30
+  await loadPortDetail(days)
+}
+
+// 更新图表
+const updateChart = () => {
+  if (!portDetail.value || !portDetail.value.history) {
+    return
+  }
+
+  const ctx = document.getElementById('port-chart')
+  if (!ctx) {
+    return
+  }
+
+  // 销毁旧图表
+  if (portChart) {
+    portChart.destroy()
+  }
+
+  // 准备数据
+  const history = [...portDetail.value.history].reverse() // 按时间正序
+  const labels = history.map(item => formatDate(item.date))
+  const uploadData = history.map(item => item.daily_up)
+  const downloadData = history.map(item => item.daily_down)
+
+  // 创建新图表
+  portChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '上传流量',
+          data: uploadData,
+          borderColor: '#74b9ff',
+          backgroundColor: 'rgba(116, 185, 255, 0.1)',
+          tension: 0.4,
+          fill: true
+        },
+        {
+          label: '下载流量',
+          data: downloadData,
+          borderColor: '#00b894',
+          backgroundColor: 'rgba(0, 184, 148, 0.1)',
+          tension: 0.4,
+          fill: true
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return context.dataset.label + ': ' + formatBytes(context.parsed.y)
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: function(value) {
+              return formatBytes(value)
+            }
+          }
+        }
+      }
+    }
+  })
 }
 
 const backToDetail = () => {
@@ -219,7 +332,14 @@ const changeHistoryPage = (page) => {
 }
 
 onMounted(async () => {
-  await loadPortDetail()
+  await loadPortDetail(7) // 默认加载7天数据
+})
+
+onUnmounted(() => {
+  // 清理图表
+  if (portChart) {
+    portChart.destroy()
+  }
 })
 </script>
 
@@ -412,5 +532,54 @@ onMounted(async () => {
 
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
+}
+
+/* 图表相关样式 */
+.chart-section {
+  margin-top: 25px;
+  margin-bottom: 25px;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.chart-btn {
+  background: #f8f9fa;
+  color: #6c757d;
+  border: 1px solid #dee2e6;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.chart-btn:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+}
+
+.chart-btn.active {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.chart-container {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  height: 300px;
+  position: relative;
 }
 </style> 

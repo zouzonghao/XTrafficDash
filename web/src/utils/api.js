@@ -70,10 +70,10 @@ export const servicesAPI = {
   getMonthlyTraffic: (serviceId) => api.get(`/db/traffic/monthly/${serviceId}`),
   
   // 获取端口详情
-  getPortDetail: (serviceId, tag) => api.get(`/db/port-detail/${serviceId}/${tag}`),
+  getPortDetail: (serviceId, tag, days = 7) => api.get(`/db/port-detail/${serviceId}/${tag}?days=${days}`),
   
   // 获取用户详情
-  getUserDetail: (serviceId, email) => api.get(`/db/user-detail/${serviceId}/${email}`),
+  getUserDetail: (serviceId, email, days = 7) => api.get(`/db/user-detail/${serviceId}/${email}?days=${days}`),
   
   // 更新服务自定义名称
   updateServiceCustomName: (serviceId, customName) => api.put(`/db/services/${serviceId}/custom-name`, { custom_name: customName }),

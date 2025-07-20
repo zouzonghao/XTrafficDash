@@ -15,7 +15,7 @@
           ✏️
         </button>
       </h1>
-      <p>服务今日流量详情</p>
+      <p>节点详情</p>
     </div>
 
     <div class="detail-container" v-if="selectedService">

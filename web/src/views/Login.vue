@@ -2,13 +2,12 @@
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <h1>X-UI 流量统计面板</h1>
+        <h1>XTrafficDash</h1>
         <p>请输入密码登录</p>
       </div>
       
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="form-group">
-          <label for="password">密码</label>
           <input
             id="password"
             v-model="password"

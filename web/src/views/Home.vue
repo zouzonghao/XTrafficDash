@@ -2,7 +2,7 @@
   <div class="container">
     <div class="header">
       <h1>XTrafficDash</h1>
-      <p>实时监控多服务器今日流量数据</p>
+      <p>多服务器流量统计</p>
       <button @click="handleLogout" class="logout-button">退出登录</button>
     </div>
 

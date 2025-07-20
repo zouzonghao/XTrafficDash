@@ -753,6 +753,14 @@ func (api *DatabaseAPI) GetPortDetail(c *gin.Context) {
 	}
 
 	// 获取端口历史流量数据
+	// 获取days参数
+	days := 7
+	if d := c.Query("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 && v <= 30 {
+			days = v
+		}
+	}
+
 	historyQuery := `
 		SELECT 
 			date,
@@ -762,10 +770,10 @@ func (api *DatabaseAPI) GetPortDetail(c *gin.Context) {
 		FROM inbound_traffic_history
 		WHERE service_id = ? AND tag = ?
 		ORDER BY date DESC
-		LIMIT 30
+		LIMIT ?
 	`
 
-	rows, err := api.db.db.Query(historyQuery, serviceID, tag)
+	rows, err := api.db.db.Query(historyQuery, serviceID, tag, days)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -829,16 +837,15 @@ func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
 			s.ip_address,
 			s.service_name,
 			ct.email,
-			COALESCE(it.tag, '') as inbound_tag,
+			'' as inbound_tag,
 			COALESCE(SUM(cth.daily_up), 0) as total_up,
 			COALESCE(SUM(cth.daily_down), 0) as total_down,
 			ct.last_updated as last_seen
 		FROM client_traffics ct
 		JOIN services s ON ct.service_id = s.id
-		LEFT JOIN inbound_traffics it ON ct.service_id = it.service_id
 		LEFT JOIN client_traffic_history cth ON ct.id = cth.client_traffic_id
 		WHERE ct.service_id = ? AND ct.email = ?
-		GROUP BY s.ip_address, s.service_name, ct.email, it.tag, ct.last_updated
+		GROUP BY s.ip_address, s.service_name, ct.email, ct.last_updated
 	`
 
 	err := api.db.db.QueryRow(userQuery, serviceID, email).Scan(
@@ -864,6 +871,14 @@ func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
 	}
 
 	// 获取用户历史流量数据
+	// 获取days参数
+	days := 7
+	if d := c.Query("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 && v <= 30 {
+			days = v
+		}
+	}
+
 	historyQuery := `
 		SELECT 
 			cth.date,
@@ -874,10 +889,20 @@ func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
 		JOIN client_traffics ct ON cth.client_traffic_id = ct.id
 		WHERE ct.service_id = ? AND ct.email = ?
 		ORDER BY cth.date DESC
-		LIMIT 30
+		LIMIT ?
 	`
 
-	rows, err := api.db.db.Query(historyQuery, serviceID, email)
+	// 转换serviceID为整数
+	serviceIDInt, err := strconv.Atoi(serviceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	rows, err := api.db.db.Query(historyQuery, serviceIDInt, email, days)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -888,11 +913,12 @@ func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
 	defer rows.Close()
 
 	var history []map[string]interface{}
+	rowCount := 0
 	for rows.Next() {
 		var date string
-		var dailyUp, dailyDown int64
+		var dailyUp, dailyDown, totalDaily int64
 
-		err := rows.Scan(&date, &dailyUp, &dailyDown)
+		err := rows.Scan(&date, &dailyUp, &dailyDown, &totalDaily)
 		if err != nil {
 			continue
 		}
@@ -901,14 +927,32 @@ func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
 			"date":        date,
 			"daily_up":    dailyUp,
 			"daily_down":  dailyDown,
-			"total_daily": dailyUp + dailyDown,
+			"total_daily": totalDaily,
 		}
 		history = append(history, record)
+		rowCount++
 	}
 
+	// 检查是否有错误
+	if err = rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "遍历历史数据失败: " + err.Error(),
+		})
+		return
+	}
+
+	// 添加调试信息
 	result := gin.H{
 		"user_info": userInfo,
 		"history":   history,
+		"debug": gin.H{
+			"service_id":     serviceID,
+			"service_id_int": serviceIDInt,
+			"email":          email,
+			"row_count":      rowCount,
+			"history_length": len(history),
+		},
 	}
 
 	c.JSON(http.StatusOK, gin.H{
