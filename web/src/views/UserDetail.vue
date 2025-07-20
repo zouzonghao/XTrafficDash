@@ -57,27 +57,29 @@
       </div>
 
       <div class="chart-section">
-        <div class="chart-header">
-          <div class="section-title">历史流量趋势</div>
-          <div class="chart-controls">
-            <button 
-              class="chart-btn" 
-              :class="{ active: chartPeriod === '7d' }"
-              @click="switchChartPeriod('7d')"
-            >
-              7天
-            </button>
-            <button 
-              class="chart-btn" 
-              :class="{ active: chartPeriod === '30d' }"
-              @click="switchChartPeriod('30d')"
-            >
-              30天
-            </button>
-          </div>
-        </div>
         <div class="chart-container">
-          <canvas id="user-chart"></canvas>
+          <div class="chart-header">
+            <div class="section-title">历史流量趋势</div>
+            <div class="chart-controls">
+              <button 
+                class="chart-btn" 
+                :class="{ active: chartPeriod === '7d' }"
+                @click="switchChartPeriod('7d')"
+              >
+                7天
+              </button>
+              <button 
+                class="chart-btn" 
+                :class="{ active: chartPeriod === '30d' }"
+                @click="switchChartPeriod('30d')"
+              >
+                30天
+              </button>
+            </div>
+          </div>
+          <div class="chart-content">
+            <canvas id="user-chart"></canvas>
+          </div>
         </div>
       </div>
 
@@ -408,6 +410,10 @@ onUnmounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
   margin-bottom: 25px;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
 
 .info-item {
@@ -600,6 +606,13 @@ onUnmounted(() => {
   margin-bottom: 25px;
 }
 
+.chart-container {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
 .chart-header {
   display: flex;
   justify-content: space-between;
@@ -634,11 +647,7 @@ onUnmounted(() => {
   border-color: #007bff;
 }
 
-.chart-container {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+.chart-content {
   height: 300px;
   position: relative;
 }
