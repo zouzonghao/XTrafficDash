@@ -57,8 +57,8 @@
       </div>
 
       <div class="history-section">
-        <div class="section-title">历史流量数据</div>
         <div class="history-container">
+          <div class="section-title">历史流量数据</div>
           <div class="history-table">
           <div class="table-header">
             <div class="header-cell date-col">日期</div>
@@ -421,7 +421,7 @@ onUnmounted(() => {
 .table-header {
   display: grid;
   grid-template-columns: 120px 1fr 1fr 1fr;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #2c3e50;
   padding: 12px 16px;
   font-weight: 600;
   color: white;
