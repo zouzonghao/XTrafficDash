@@ -197,8 +197,6 @@ const loadPortDetail = async (days = 7) => {
       portDetail.value = response.data.data
       // 重置分页
       currentHistoryPage.value = 1
-      // 更新图表
-      updateChart()
     }
   } catch (error) {
     console.error('获取端口详情失败:', error)
@@ -208,88 +206,141 @@ const loadPortDetail = async (days = 7) => {
 const refreshPortDetail = async () => {
   const days = chartPeriod.value === '7d' ? 7 : 30
   await loadPortDetail(days)
+  await createPortChart()
 }
 
 // 切换图表周期
 const switchChartPeriod = async (period) => {
+  if (chartPeriod.value === period) return
+  
   chartPeriod.value = period
   const days = period === '7d' ? 7 : 30
   await loadPortDetail(days)
+  await createPortChart()
 }
 
-// 更新图表
-const updateChart = () => {
-  if (!portDetail.value || !portDetail.value.history) {
-    return
-  }
+// 创建端口图表
+const createPortChart = async () => {
+  try {
+    if (!portDetail.value || !portDetail.value.history) {
+      return
+    }
 
-  const ctx = document.getElementById('port-chart')
-  if (!ctx) {
-    return
-  }
+    const ctx = document.getElementById('port-chart')
+    if (!ctx) {
+      return
+    }
 
-  // 销毁旧图表
-  if (portChart) {
-    portChart.destroy()
-  }
+    // 销毁旧图表
+    if (portChart) {
+      portChart.destroy()
+    }
 
-  // 准备数据
-  const history = [...portDetail.value.history].reverse() // 按时间正序
-  const labels = history.map(item => formatDate(item.date))
-  const uploadData = history.map(item => item.daily_up)
-  const downloadData = history.map(item => item.daily_down)
+    // 准备数据
+    const history = [...portDetail.value.history].reverse() // 按时间正序
+    const labels = history.map(item => formatDate(item.date))
+    const uploadData = history.map(item => item.daily_up)
+    const downloadData = history.map(item => item.daily_down)
 
-  // 创建新图表
-  portChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: '上传流量',
-          data: uploadData,
-          borderColor: '#74b9ff',
-          backgroundColor: 'rgba(116, 185, 255, 0.1)',
-          tension: 0.4,
-          fill: true
-        },
-        {
-          label: '下载流量',
-          data: downloadData,
-          borderColor: '#00b894',
-          backgroundColor: 'rgba(0, 184, 148, 0.1)',
-          tension: 0.4,
-          fill: true
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'top',
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              return context.dataset.label + ': ' + formatBytes(context.parsed.y)
+    // 创建新图表
+    portChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: '上传流量',
+            data: uploadData,
+            borderColor: '#74b9ff',
+            backgroundColor: 'rgba(116, 185, 255, 0.1)',
+            tension: 0.4,
+            fill: true
+          },
+          {
+            label: '下载流量',
+            data: downloadData,
+            borderColor: '#00b894',
+            backgroundColor: 'rgba(0, 184, 148, 0.1)',
+            tension: 0.4,
+            fill: true
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: {
+              color: '#2c3e50',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.dataset.label + ': ' + formatBytes(context.parsed.y)
+              }
             }
           }
-        }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: {
-            callback: function(value) {
-              return formatBytes(value)
+        },
+        scales: {
+          x: {
+            display: true,
+            title: {
+              display: true,
+              text: '日期',
+              color: '#2c3e50',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            },
+            ticks: {
+              color: '#2c3e50',
+              font: {
+                size: 12
+              }
+            },
+            grid: {
+              color: 'rgba(44, 62, 80, 0.1)'
+            }
+          },
+          y: {
+            display: true,
+            title: {
+              display: true,
+              text: '流量',
+              color: '#2c3e50',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            },
+            ticks: {
+              color: '#2c3e50',
+              font: {
+                size: 12
+              },
+              callback: function(value) {
+                return formatBytes(value)
+              }
+            },
+            grid: {
+              color: 'rgba(44, 62, 80, 0.1)'
             }
           }
         }
       }
-    }
-  })
+    })
+  } catch (error) {
+    console.error('创建端口图表失败:', error)
+  }
 }
 
 const backToDetail = () => {
@@ -333,6 +384,7 @@ const changeHistoryPage = (page) => {
 
 onMounted(async () => {
   await loadPortDetail(7) // 默认加载7天数据
+  await createPortChart()
 })
 
 onUnmounted(() => {
