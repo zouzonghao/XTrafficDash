@@ -5,7 +5,16 @@
     </button>
 
     <div class="header">
-      <h1>{{ selectedService?.custom_name || selectedService?.ip_address }}</h1>
+      <h1>
+        {{ selectedService?.custom_name || selectedService?.ip_address }}
+        <button 
+          class="edit-icon" 
+          @click="startEditServiceName"
+          title="编辑服务名称"
+        >
+          ✏️
+        </button>
+      </h1>
       <p>服务今日流量详情</p>
     </div>
 
@@ -102,6 +111,17 @@
     </div>
   </div>
   
+  <!-- 编辑服务名称弹窗 -->
+  <EditNameModal
+    v-model:visible="showServiceModal"
+    :value="currentEditingValue"
+    title="编辑服务名称"
+    label="服务名称"
+    placeholder="请输入服务名称"
+    @save="saveServiceName"
+    @close="closeServiceModal"
+  />
+  
   <!-- 编辑端口名称弹窗 -->
   <EditNameModal
     v-model:visible="showInboundModal"
@@ -145,6 +165,7 @@ let refreshInterval = null
 const isRefreshing = ref(false)
 
 // 弹窗相关状态
+const showServiceModal = ref(false)
 const showInboundModal = ref(false)
 const showClientModal = ref(false)
 const currentEditingInbound = ref(null)
@@ -224,6 +245,31 @@ const saveClientName = async (newName) => {
 const closeClientModal = () => {
   showClientModal.value = false
   currentEditingClient.value = null
+}
+
+// 编辑服务名称
+const startEditServiceName = () => {
+  currentEditingValue.value = selectedService.value?.custom_name || selectedService.value?.ip_address
+  showServiceModal.value = true
+}
+
+const saveServiceName = async (newName) => {
+  try {
+    const response = await servicesAPI.updateServiceCustomName(selectedService.value.id, newName)
+    if (response.data.success) {
+      selectedService.value.custom_name = newName
+      showServiceModal.value = false
+    } else {
+      alert('保存失败: ' + response.data.error)
+    }
+  } catch (error) {
+    console.error('保存服务名称失败:', error)
+    alert('保存失败: ' + error.message)
+  }
+}
+
+const closeServiceModal = () => {
+  showServiceModal.value = false
 }
 
 const createDetailChart = async () => {
@@ -444,6 +490,14 @@ onUnmounted(() => {
 
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
+}
+
+/* 标题中的编辑图标样式 */
+.header h1 .edit-icon {
+  font-size: 16px;
+  padding: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 .chart-section {
