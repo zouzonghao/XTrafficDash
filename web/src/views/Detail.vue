@@ -103,7 +103,25 @@
       </div>
 
       <div class="chart-section">
-        <div class="section-title">历史流量趋势</div>
+        <div class="chart-header">
+          <div class="section-title">历史流量趋势</div>
+          <div class="chart-controls">
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '7d' }"
+              @click="switchChartPeriod('7d')"
+            >
+              7天
+            </button>
+            <button 
+              class="chart-btn" 
+              :class="{ active: chartPeriod === '30d' }"
+              @click="switchChartPeriod('30d')"
+            >
+              30天
+            </button>
+          </div>
+        </div>
         <div class="chart-container">
           <canvas id="detail-chart"></canvas>
         </div>
@@ -163,6 +181,7 @@ const selectedService = computed(() => servicesStore.selectedService)
 let detailChart = null
 let refreshInterval = null
 const isRefreshing = ref(false)
+const chartPeriod = ref('7d') // 图表周期：7d 或 30d
 
 // 弹窗相关状态
 const showServiceModal = ref(false)
@@ -272,9 +291,20 @@ const closeServiceModal = () => {
   showServiceModal.value = false
 }
 
+// 切换图表周期
+const switchChartPeriod = async (period) => {
+  if (chartPeriod.value === period) return
+  
+  chartPeriod.value = period
+  await createDetailChart()
+}
+
 const createDetailChart = async () => {
   try {
-    const response = await servicesAPI.getWeeklyTraffic(selectedService.value.id)
+    // 根据周期选择API
+    const response = chartPeriod.value === '7d' 
+      ? await servicesAPI.getWeeklyTraffic(selectedService.value.id)
+      : await servicesAPI.getMonthlyTraffic(selectedService.value.id)
     if (response.data.success) {
       const data = response.data.data
       const ctx = document.getElementById('detail-chart')
@@ -508,11 +538,46 @@ onUnmounted(() => {
   margin-top: 25px;
 }
 
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
 .section-title {
   font-size: 1.2rem;
   font-weight: bold;
-  margin-bottom: 16px;
   color: #2c3e50;
+  margin: 0;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.chart-btn {
+  padding: 6px 12px;
+  border: 1px solid #e1e8ed;
+  background: white;
+  color: #2c3e50;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.chart-btn:hover {
+  background: #f8f9fa;
+  border-color: #3498db;
+}
+
+.chart-btn.active {
+  background: #3498db;
+  color: white;
+  border-color: #3498db;
 }
 
 .chart-container {

@@ -66,6 +66,9 @@ export const servicesAPI = {
   // 获取7天流量数据
   getWeeklyTraffic: (serviceId) => api.get(`/db/traffic/weekly/${serviceId}`),
   
+  // 获取30天流量数据
+  getMonthlyTraffic: (serviceId) => api.get(`/db/traffic/monthly/${serviceId}`),
+  
   // 获取端口详情
   getPortDetail: (serviceId, tag) => api.get(`/db/port-detail/${serviceId}/${tag}`),
   

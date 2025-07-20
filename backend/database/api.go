@@ -36,6 +36,7 @@ func (api *DatabaseAPI) RegisterRoutes(r *gin.Engine) {
 		dbGroup.GET("/traffic/summary", api.GetTrafficSummary)
 		dbGroup.GET("/traffic/history", api.GetTrafficHistory)
 		dbGroup.GET("/traffic/weekly/:service_id", api.GetWeeklyTraffic)
+		dbGroup.GET("/traffic/monthly/:service_id", api.GetMonthlyTraffic)
 
 		// 原始数据
 		dbGroup.GET("/raw-requests", api.GetRawRequests)
@@ -516,6 +517,126 @@ func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "获取7天流量数据成功",
+		"data":    result,
+	})
+}
+
+// 获取服务30天流量数据
+func (api *DatabaseAPI) GetMonthlyTraffic(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	// 获取过去30天的日期（从29天前到今天，今天在最右边）
+	dates := make([]string, 30)
+	trafficData := make(map[string]map[string]int64)
+
+	// 直接生成正确的顺序：29天前, 28天前, ..., 昨天, 今天
+	for i := 0; i < 30; i++ {
+		date := time.Now().AddDate(0, 0, -(29 - i))
+		dateStr := date.Format("2006-01-02")
+		dates[i] = dateStr
+		trafficData[dateStr] = map[string]int64{
+			"upload":   0,
+			"download": 0,
+		}
+	}
+
+	// 查询历史流量数据（前29天）
+	historyQuery := `
+		SELECT 
+			ith.date,
+			SUM(ith.daily_up) as total_up,
+			SUM(ith.daily_down) as total_down
+		FROM inbound_traffic_history ith
+		WHERE ith.service_id = ? AND ith.date >= DATE('now', '-29 days') AND ith.date < DATE('now')
+		GROUP BY ith.date
+		ORDER BY ith.date
+	`
+
+	historyRows, err := api.db.db.Query(historyQuery, serviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询历史流量失败: " + err.Error(),
+		})
+		return
+	}
+	defer historyRows.Close()
+
+	for historyRows.Next() {
+		var date string
+		var totalUp, totalDown int64
+
+		err := historyRows.Scan(&date, &totalUp, &totalDown)
+		if err != nil {
+			continue
+		}
+
+		// 处理日期格式，去掉时间部分
+		dateOnly := date
+		if len(date) > 10 {
+			dateOnly = date[:10]
+		}
+
+		if data, exists := trafficData[dateOnly]; exists {
+			data["upload"] = totalUp
+			data["download"] = totalDown
+		}
+	}
+
+	// 查询今日实时流量数据
+	todayQuery := `
+		SELECT 
+			SUM(it.up) as total_up,
+			SUM(it.down) as total_down
+		FROM inbound_traffics it
+		WHERE it.service_id = ? AND it.status = 'active'
+	`
+
+	var todayUp, todayDown int64
+	err = api.db.db.QueryRow(todayQuery, serviceID).Scan(&todayUp, &todayDown)
+	if err != nil && err != sql.ErrNoRows {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询今日流量失败: " + err.Error(),
+		})
+		return
+	}
+
+	// 设置今日数据
+	today := time.Now().Format("2006-01-02")
+	if data, exists := trafficData[today]; exists {
+		data["upload"] = todayUp
+		data["download"] = todayDown
+	}
+
+	// 构建响应数据
+	uploadData := make([]int64, 30)
+	downloadData := make([]int64, 30)
+
+	for i, date := range dates {
+		if data, exists := trafficData[date]; exists {
+			uploadData[i] = data["upload"]
+			downloadData[i] = data["download"]
+		}
+	}
+
+	result := gin.H{
+		"dates":         dates,
+		"upload_data":   uploadData,
+		"download_data": downloadData,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取30天流量数据成功",
 		"data":    result,
 	})
 }
