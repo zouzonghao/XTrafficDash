@@ -33,7 +33,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/sanqi37/XTrafficDash
+          images: docker.io/sanqi37/xtrafficdash
           tags: |
             # 使用 Git 标签作为 Docker 标签（去掉 v 前缀）
             type=ref,event=tag
