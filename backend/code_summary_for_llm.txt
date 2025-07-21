@@ -1,0 +1,3102 @@
+--- 文件路径 (File Path): ./database/auth.go ---
+
+package database
+
+import (
+	"crypto/rand"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type LoginRequest struct {
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Token   string `json:"token,omitempty"`
+}
+
+type Claims struct {
+	UserID string `json:"user_id"`
+	jwt.RegisteredClaims
+}
+
+var jwtSecret []byte
+
+// 初始化JWT密钥
+func InitJWT() {
+	// 生成随机密钥
+	secret := make([]byte, 32)
+	rand.Read(secret)
+	jwtSecret = secret
+}
+
+// 验证密码
+func validatePassword(password string) bool {
+	// 从环境变量读取密码
+	envPassword := os.Getenv("X_UI_PASSWORD")
+	if envPassword == "" {
+		// 如果没有设置环境变量，使用默认密码
+		envPassword = "admin123"
+	}
+	return password == envPassword
+}
+
+// 生成JWT token
+func generateToken() (string, error) {
+	claims := Claims{
+		UserID: "admin",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtSecret)
+}
+
+// 验证JWT token
+func validateToken(tokenString string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, jwt.ErrSignatureInvalid
+}
+
+// 登录处理
+func HandleLogin(c *gin.Context) {
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, LoginResponse{
+			Success: false,
+			Message: "请求参数错误",
+		})
+		return
+	}
+
+	if !validatePassword(req.Password) {
+		c.JSON(http.StatusUnauthorized, LoginResponse{
+			Success: false,
+			Message: "密码错误",
+		})
+		return
+	}
+
+	token, err := generateToken()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, LoginResponse{
+			Success: false,
+			Message: "生成token失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, LoginResponse{
+		Success: true,
+		Message: "登录成功",
+		Token:   token,
+	})
+}
+
+// 验证token中间件
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未提供认证token"})
+			c.Abort()
+			return
+		}
+
+		// 提取Bearer token
+		if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token格式错误"})
+			c.Abort()
+			return
+		}
+
+		tokenString := authHeader[7:]
+		claims, err := validateToken(tokenString)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "token无效"})
+			c.Abort()
+			return
+		}
+
+		// 将用户信息存储到上下文中
+		c.Set("user_id", claims.UserID)
+		c.Next()
+	}
+}
+
+// 验证token接口
+func HandleVerifyToken(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "token有效",
+	})
+}
+
+--- 文件内容结束 (End of Content) ---
+
+--- 文件路径 (File Path): ./database/schema.sql ---
+
+-- X-UI 流量数据数据库表结构
+-- 创建时间: 2024-01-01
+-- 描述: 存储X-UI服务的流量数据，包括入站流量和客户端流量
+
+-- 1. 服务表 - 记录每个IP对应的X-UI服务
+CREATE TABLE IF NOT EXISTS services (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip_address TEXT NOT NULL UNIQUE,           -- 服务IP地址
+    service_name TEXT,                         -- 服务名称（可选）
+    custom_name TEXT,                          -- 自定义名称
+    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 首次发现时间
+    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,   -- 最后活跃时间
+    status TEXT DEFAULT 'active',              -- 服务状态：active, inactive
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. 入站流量表 - 记录每个入站端口的基础信息（不再存储流量）
+CREATE TABLE IF NOT EXISTS inbound_traffics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_id INTEGER NOT NULL,               -- 关联服务ID
+    tag TEXT NOT NULL,                         -- 端口标识（如：inbound-39062）
+    port INTEGER,                              -- 端口号（从tag中解析）
+    custom_name TEXT,                          -- 自定义名称
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 最后更新时间
+    status TEXT DEFAULT 'active',              -- 状态：active, inactive
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
+    UNIQUE(service_id, tag)
+);
+
+-- 3. 客户端流量表 - 记录每个用户的基础信息（不再存储流量）
+CREATE TABLE IF NOT EXISTS client_traffics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_id INTEGER NOT NULL,               -- 关联服务ID
+    email TEXT NOT NULL,                       -- 用户邮箱
+    custom_name TEXT,                          -- 自定义名称
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 最后更新时间
+    status TEXT DEFAULT 'active',              -- 状态：active, inactive
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
+    UNIQUE(service_id, email)
+);
+
+-- 4. 入站流量历史记录表 - 每日流量统计
+CREATE TABLE IF NOT EXISTS inbound_traffic_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inbound_traffic_id INTEGER NOT NULL,       -- 关联入站流量ID
+    service_id INTEGER NOT NULL,               -- 关联服务ID
+    tag TEXT NOT NULL,                         -- 端口标识
+    date DATE NOT NULL,                        -- 日期（YYYY-MM-DD）
+    daily_up BIGINT DEFAULT 0,                 -- 当日上传流量
+    daily_down BIGINT DEFAULT 0,               -- 当日下载流量
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (inbound_traffic_id) REFERENCES inbound_traffics(id) ON DELETE CASCADE,
+    FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
+    UNIQUE(inbound_traffic_id, date)
+);
+
+-- 5. 原始请求记录表 - 记录所有接收到的原始数据
+CREATE TABLE IF NOT EXISTS raw_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_id INTEGER NOT NULL,               -- 关联服务ID
+    client_ip TEXT NOT NULL,                   -- 客户端IP
+    user_agent TEXT,                           -- User-Agent
+    request_body TEXT,                         -- 原始请求体
+    parsed_data TEXT,                          -- 解析后的JSON数据
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 接收时间
+    processed BOOLEAN DEFAULT FALSE,           -- 是否已处理
+    FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
+);
+
+-- 创建索引以提高查询性能
+CREATE INDEX IF NOT EXISTS idx_services_ip ON services(ip_address);
+CREATE INDEX IF NOT EXISTS idx_services_status ON services(status);
+CREATE INDEX IF NOT EXISTS idx_inbound_traffics_service_tag ON inbound_traffics(service_id, tag);
+CREATE INDEX IF NOT EXISTS idx_inbound_traffics_status ON inbound_traffics(status);
+CREATE INDEX IF NOT EXISTS idx_client_traffics_service_email ON client_traffics(service_id, email);
+CREATE INDEX IF NOT EXISTS idx_client_traffics_status ON client_traffics(status);
+CREATE INDEX IF NOT EXISTS idx_inbound_history_date ON inbound_traffic_history(date);
+CREATE INDEX IF NOT EXISTS idx_inbound_history_service_date ON inbound_traffic_history(service_id, date);
+CREATE INDEX IF NOT EXISTS idx_raw_requests_service_time ON raw_requests(service_id, received_at);
+
+-- 创建触发器，自动更新updated_at字段
+CREATE TRIGGER IF NOT EXISTS update_services_updated_at 
+    AFTER UPDATE ON services
+    FOR EACH ROW
+BEGIN
+    UPDATE services SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_inbound_traffics_updated_at 
+    AFTER UPDATE ON inbound_traffics
+    FOR EACH ROW
+BEGIN
+    UPDATE inbound_traffics SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_client_traffics_updated_at 
+    AFTER UPDATE ON client_traffics
+    FOR EACH ROW
+BEGIN
+    UPDATE client_traffics SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- 创建视图，方便查询汇总数据
+CREATE VIEW IF NOT EXISTS v_service_summary AS
+SELECT 
+    s.id,
+    s.ip_address,
+    s.service_name,
+    s.last_seen,
+    COUNT(DISTINCT it.id) as inbound_count,
+    COUNT(DISTINCT ct.id) as client_count,
+    SUM(it.up) as total_inbound_up,
+    SUM(it.down) as total_inbound_down,
+    SUM(ct.up) as total_client_up,
+    SUM(ct.down) as total_client_down
+FROM services s
+LEFT JOIN inbound_traffics it ON s.id = it.service_id AND it.status = 'active'
+LEFT JOIN client_traffics ct ON s.id = ct.service_id AND ct.status = 'active'
+GROUP BY s.id, s.ip_address, s.service_name, s.last_seen;
+
+-- 创建视图，显示今日流量统计
+CREATE VIEW IF NOT EXISTS v_today_traffic AS
+SELECT 
+    s.ip_address,
+    it.tag,
+    it.up as current_up,
+    it.down as current_down,
+    ith.daily_up as today_up,
+    ith.daily_down as today_down,
+    it.last_updated
+FROM services s
+JOIN inbound_traffics it ON s.id = it.service_id
+LEFT JOIN inbound_traffic_history ith ON it.id = ith.inbound_traffic_id 
+    AND ith.date = DATE('now')
+WHERE it.status = 'active'
+ORDER BY s.ip_address, it.tag; 
+--- 文件内容结束 (End of Content) ---
+
+--- 文件路径 (File Path): ./database/database.go ---
+
+package database
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+// 数据库结构体
+type Database struct {
+	db *sql.DB
+}
+
+// 流量数据结构体
+type TrafficData struct {
+	ClientTraffics  []ClientTraffic  `json:"clientTraffics"`
+	InboundTraffics []InboundTraffic `json:"inboundTraffics"`
+}
+
+// 客户端流量结构体
+type ClientTraffic struct {
+	ID         int    `json:"id"`
+	InboundID  int    `json:"inboundId"`
+	Enable     bool   `json:"enable"`
+	Email      string `json:"email"`
+	Up         int64  `json:"up"`
+	Down       int64  `json:"down"`
+	ExpiryTime int64  `json:"expiryTime"`
+	Total      int64  `json:"total"`
+	Reset      int64  `json:"reset"`
+}
+
+// 入站流量结构体
+type InboundTraffic struct {
+	IsInbound  bool   `json:"IsInbound"`
+	IsOutbound bool   `json:"IsOutbound"`
+	Tag        string `json:"Tag"`
+	Up         int64  `json:"Up"`
+	Down       int64  `json:"Down"`
+}
+
+// 服务信息结构体
+type Service struct {
+	ID          int       `json:"id"`
+	IPAddress   string    `json:"ip_address"`
+	ServiceName string    `json:"service_name"`
+	FirstSeen   time.Time `json:"first_seen"`
+	LastSeen    time.Time `json:"last_seen"`
+	Status      string    `json:"status"`
+}
+
+// 入站流量记录结构体
+type InboundTrafficRecord struct {
+	ID          int       `json:"id"`
+	ServiceID   int       `json:"service_id"`
+	Tag         string    `json:"tag"`
+	Port        int       `json:"port"`
+	CustomName  string    `json:"custom_name"`
+	Up          int64     `json:"up"`
+	Down        int64     `json:"down"`
+	LastUpdated time.Time `json:"last_updated"`
+	Status      string    `json:"status"`
+}
+
+// 客户端流量记录结构体
+type ClientTrafficRecord struct {
+	ID          int       `json:"id"`
+	ServiceID   int       `json:"service_id"`
+	Email       string    `json:"email"`
+	CustomName  string    `json:"custom_name"`
+	Up          int64     `json:"up"`
+	Down        int64     `json:"down"`
+	LastUpdated time.Time `json:"last_updated"`
+	Status      string    `json:"status"`
+}
+
+// HY2配置结构体
+// 用于存储hy2主动流量同步的参数
+
+type Hy2Config struct {
+	ID                int    `json:"id"`
+	SourceAPIPassword string `json:"source_api_password"`
+	SourceAPIHost     string `json:"source_api_host"`
+	SourceAPIPort     string `json:"source_api_port"`
+	TargetAPIURL      string `json:"target_api_url"`
+}
+
+// 打开数据库连接
+func OpenDatabase(dbPath string) (*Database, error) {
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("打开数据库失败: %v", err)
+	}
+
+	// 配置数据库连接池
+	db.SetMaxOpenConns(25)                 // 最大连接数
+	db.SetMaxIdleConns(10)                 // 最大空闲连接数
+	db.SetConnMaxLifetime(5 * time.Minute) // 连接最大生命周期
+	db.SetConnMaxIdleTime(3 * time.Minute) // 空闲连接最大生命周期
+
+	// 测试连接
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("数据库连接测试失败: %v", err)
+	}
+
+	// 设置时区为本地时间
+	if _, err := db.Exec("PRAGMA timezone = 'local'"); err != nil {
+		return nil, fmt.Errorf("设置时区失败: %v", err)
+	}
+
+	// 优化SQLite性能
+	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		return nil, fmt.Errorf("设置WAL模式失败: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA synchronous = NORMAL"); err != nil {
+		return nil, fmt.Errorf("设置同步模式失败: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA cache_size = 10000"); err != nil {
+		return nil, fmt.Errorf("设置缓存大小失败: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA temp_store = MEMORY"); err != nil {
+		return nil, fmt.Errorf("设置临时存储失败: %v", err)
+	}
+
+	// 初始化数据库表
+	if err := initDatabase(db); err != nil {
+		return nil, fmt.Errorf("初始化数据库失败: %v", err)
+	}
+
+	return &Database{db: db}, nil
+}
+
+// 关闭数据库连接
+func (d *Database) Close() error {
+	return d.db.Close()
+}
+
+// 初始化数据库表
+func initDatabase(db *sql.DB) error {
+	// 读取SQL文件内容
+	schemaSQL := `
+	-- XTrafficDash 流量数据数据库表结构
+	-- 创建时间: 2024-01-01
+	-- 描述: 存储X-UI服务的流量数据，包括入站流量和客户端流量
+
+	-- 1. 服务表 - 记录每个IP对应的X-UI服务
+	CREATE TABLE IF NOT EXISTS services (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		ip_address TEXT NOT NULL UNIQUE,
+		service_name TEXT,
+		custom_name TEXT,
+		first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		status TEXT DEFAULT 'active',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- 2. 入站流量表 - 记录每个入站端口的流量数据
+	CREATE TABLE IF NOT EXISTS inbound_traffics (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		service_id INTEGER NOT NULL,
+		tag TEXT NOT NULL,
+		port INTEGER,
+		custom_name TEXT,
+		up BIGINT DEFAULT 0,
+		down BIGINT DEFAULT 0,
+		last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		status TEXT DEFAULT 'active',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
+		UNIQUE(service_id, tag)
+	);
+
+	-- 3. 客户端流量表 - 记录每个用户的流量数据
+	CREATE TABLE IF NOT EXISTS client_traffics (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		service_id INTEGER NOT NULL,
+		email TEXT NOT NULL,
+		custom_name TEXT,
+		up BIGINT DEFAULT 0,
+		down BIGINT DEFAULT 0,
+		last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		status TEXT DEFAULT 'active',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
+		UNIQUE(service_id, email)
+	);
+
+	-- 4. 入站流量历史记录表 - 每日流量统计
+	CREATE TABLE IF NOT EXISTS inbound_traffic_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		inbound_traffic_id INTEGER NOT NULL,
+		service_id INTEGER NOT NULL,
+		tag TEXT NOT NULL,
+		date DATE NOT NULL,
+		daily_up BIGINT DEFAULT 0,
+		daily_down BIGINT DEFAULT 0,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (inbound_traffic_id) REFERENCES inbound_traffics(id) ON DELETE CASCADE,
+		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
+		UNIQUE(inbound_traffic_id, date)
+	);
+
+	-- 5. 客户端流量历史记录表 - 每日流量统计
+	CREATE TABLE IF NOT EXISTS client_traffic_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		client_traffic_id INTEGER NOT NULL,
+		service_id INTEGER NOT NULL,
+		email TEXT NOT NULL,
+		date DATE NOT NULL,
+		daily_up BIGINT DEFAULT 0,
+		daily_down BIGINT DEFAULT 0,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (client_traffic_id) REFERENCES client_traffics(id) ON DELETE CASCADE,
+		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
+		UNIQUE(client_traffic_id, date)
+	);
+
+	-- 6. 原始请求记录表 - 记录所有接收到的原始数据
+	CREATE TABLE IF NOT EXISTS raw_requests (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		service_id INTEGER NOT NULL,
+		client_ip TEXT NOT NULL,
+		user_agent TEXT,
+		request_body TEXT,
+		parsed_data TEXT,
+		received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		processed BOOLEAN DEFAULT FALSE,
+		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
+	);
+
+	-- 7. HY2配置表
+	CREATE TABLE IF NOT EXISTS hy2_config (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		source_api_password TEXT NOT NULL DEFAULT 'admin',
+		source_api_host TEXT NOT NULL DEFAULT '',
+		source_api_port TEXT NOT NULL DEFAULT '',
+		target_api_url TEXT NOT NULL DEFAULT ''
+	);
+	-- 移除默认插入，避免无效配置
+
+	-- 创建索引
+	CREATE INDEX IF NOT EXISTS idx_services_ip ON services(ip_address);
+	CREATE INDEX IF NOT EXISTS idx_inbound_traffics_service_tag ON inbound_traffics(service_id, tag);
+	CREATE INDEX IF NOT EXISTS idx_client_traffics_service_email ON client_traffics(service_id, email);
+	CREATE INDEX IF NOT EXISTS idx_inbound_history_date ON inbound_traffic_history(date);
+	CREATE INDEX IF NOT EXISTS idx_client_history_date ON client_traffic_history(date);
+	CREATE INDEX IF NOT EXISTS idx_raw_requests_service_time ON raw_requests(service_id, received_at);
+	`
+
+	// 执行SQL语句
+	_, err := db.Exec(schemaSQL)
+	return err
+}
+
+// 处理流量数据
+func (d *Database) ProcessTrafficData(clientIP string, userAgent string, requestBody string, trafficData *TrafficData) error {
+	// 开始事务
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开始事务失败: %v", err)
+	}
+	defer tx.Rollback()
+
+	// 1. 获取或创建服务记录
+	serviceID, err := d.getOrCreateService(tx, clientIP)
+	if err != nil {
+		return fmt.Errorf("获取或创建服务失败: %v", err)
+	}
+
+	// 2. 记录原始请求
+	parsedData, _ := json.Marshal(trafficData)
+	err = d.recordRawRequest(tx, serviceID, clientIP, userAgent, requestBody, string(parsedData))
+	if err != nil {
+		return fmt.Errorf("记录原始请求失败: %v", err)
+	}
+
+	// 3. 处理入站流量数据并记录有流量的端口
+	err = d.processInboundTraffics(tx, serviceID, trafficData.InboundTraffics)
+	if err != nil {
+		return fmt.Errorf("处理入站流量失败: %v", err)
+	}
+
+	// 4. 处理客户端流量数据
+	err = d.processClientTraffics(tx, serviceID, trafficData.ClientTraffics)
+	if err != nil {
+		return fmt.Errorf("处理客户端流量失败: %v", err)
+	}
+
+	// 5. 只要有数据包发来就更新节点最后活跃时间（包括心跳数据）
+	err = d.updateServiceLastSeen(tx, serviceID)
+	if err != nil {
+		return fmt.Errorf("更新服务最后活跃时间失败: %v", err)
+	}
+
+	// 提交事务
+	return tx.Commit()
+}
+
+// 获取或创建服务记录
+func (d *Database) getOrCreateService(tx *sql.Tx, ipAddress string) (int, error) {
+	var serviceID int
+
+	// 先尝试查找现有服务
+	err := tx.QueryRow("SELECT id FROM services WHERE ip_address = ?", ipAddress).Scan(&serviceID)
+	if err == sql.ErrNoRows {
+		// 创建新服务
+		result, err := tx.Exec(`
+			INSERT INTO services (ip_address, service_name, first_seen, last_seen, status)
+			VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'active')
+		`, ipAddress, fmt.Sprintf("XTrafficDash-Service-%s", ipAddress))
+		if err != nil {
+			return 0, err
+		}
+
+		serviceID64, err := result.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+		serviceID = int(serviceID64)
+	} else if err != nil {
+		return 0, err
+	}
+
+	return serviceID, nil
+}
+
+// 记录原始请求
+func (d *Database) recordRawRequest(tx *sql.Tx, serviceID int, clientIP, userAgent, requestBody, parsedData string) error {
+	_, err := tx.Exec(`
+		INSERT INTO raw_requests (service_id, client_ip, user_agent, request_body, parsed_data, received_at, processed)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE)
+	`, serviceID, clientIP, userAgent, requestBody, parsedData)
+	return err
+}
+
+// 处理入站流量数据
+func (d *Database) processInboundTraffics(tx *sql.Tx, serviceID int, inboundTraffics []InboundTraffic) error {
+	var activePorts []string
+	for _, traffic := range inboundTraffics {
+		if !traffic.IsInbound {
+			continue
+		}
+		port := d.extractPortFromTag(traffic.Tag)
+		if traffic.Up > 0 || traffic.Down > 0 {
+			activePorts = append(activePorts, fmt.Sprintf("端口%d(上传:%s,下载:%s)", port, d.formatBytes(traffic.Up), d.formatBytes(traffic.Down)))
+		}
+		// 获取或创建入站流量记录
+		var recordID int
+		err := tx.QueryRow(`SELECT id FROM inbound_traffics WHERE service_id = ? AND tag = ?`, serviceID, traffic.Tag).Scan(&recordID)
+		if err == sql.ErrNoRows {
+			result, err := tx.Exec(`INSERT INTO inbound_traffics (service_id, tag, port, last_updated, status) VALUES (?, ?, ?, CURRENT_TIMESTAMP, 'active')`, serviceID, traffic.Tag, port)
+			if err != nil {
+				return err
+			}
+			recordID64, _ := result.LastInsertId()
+			recordID = int(recordID64)
+		} else if err != nil {
+			return err
+		}
+		// upsert 到历史表，写入 date 用 localtime
+		if traffic.Up > 0 || traffic.Down > 0 {
+			_, err := tx.Exec(`
+				INSERT INTO inbound_traffic_history (inbound_traffic_id, service_id, tag, date, daily_up, daily_down, created_at)
+				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
+				ON CONFLICT(inbound_traffic_id, date) DO UPDATE SET
+					daily_up = daily_up + excluded.daily_up,
+					daily_down = daily_down + excluded.daily_down
+			`, recordID, serviceID, traffic.Tag, traffic.Up, traffic.Down)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if len(activePorts) > 0 {
+		fmt.Printf("活跃端口: %s\n", strings.Join(activePorts, ", "))
+	}
+	return nil
+}
+
+// 处理客户端流量数据
+func (d *Database) processClientTraffics(tx *sql.Tx, serviceID int, clientTraffics []ClientTraffic) error {
+	for _, traffic := range clientTraffics {
+		var recordID int
+		err := tx.QueryRow(`SELECT id FROM client_traffics WHERE service_id = ? AND email = ?`, serviceID, traffic.Email).Scan(&recordID)
+		if err == sql.ErrNoRows {
+			result, err := tx.Exec(`INSERT INTO client_traffics (service_id, email, last_updated, status) VALUES (?, ?, CURRENT_TIMESTAMP, 'active')`, serviceID, traffic.Email)
+			if err != nil {
+				return err
+			}
+			recordID64, _ := result.LastInsertId()
+			recordID = int(recordID64)
+		} else if err != nil {
+			return err
+		}
+		// upsert 到历史表，写入 date 用 localtime
+		if traffic.Up > 0 || traffic.Down > 0 {
+			_, err := tx.Exec(`
+				INSERT INTO client_traffic_history (client_traffic_id, service_id, email, date, daily_up, daily_down, created_at)
+				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
+				ON CONFLICT(client_traffic_id, date) DO UPDATE SET
+					daily_up = daily_up + excluded.daily_up,
+					daily_down = daily_down + excluded.daily_down
+			`, recordID, serviceID, traffic.Email, traffic.Up, traffic.Down)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// 更新服务最后活跃时间
+func (d *Database) updateServiceLastSeen(tx *sql.Tx, serviceID int) error {
+	_, err := tx.Exec(`
+		UPDATE services 
+		SET last_seen = CURRENT_TIMESTAMP 
+		WHERE id = ?
+	`, serviceID)
+	return err
+}
+
+// 从tag中提取端口号
+func (d *Database) extractPortFromTag(tag string) int {
+	re := regexp.MustCompile(`inbound-(\d+)`)
+	matches := re.FindStringSubmatch(tag)
+	if len(matches) > 1 {
+		if port, err := strconv.Atoi(matches[1]); err == nil {
+			return port
+		}
+	}
+	return 0
+}
+
+// 格式化字节数
+func (d *Database) formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// 获取服务汇总信息
+func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
+	// 首先获取所有服务的基本信息
+	serviceRows, err := d.db.Query(`
+		SELECT 
+			s.id,
+			s.ip_address,
+			s.service_name,
+			s.custom_name,
+			s.last_seen,
+			CASE 
+				WHEN (strftime('%s', 'now') - strftime('%s', s.last_seen)) <= 30 THEN 'active'
+				ELSE 'inactive'
+			END as status
+		FROM services s
+		ORDER BY s.last_seen DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer serviceRows.Close()
+
+	var results []map[string]interface{}
+	serviceMap := make(map[int]map[string]interface{})
+
+	// 处理服务基本信息
+	for serviceRows.Next() {
+		var id int
+		var ipAddress, serviceName, lastSeen, status string
+		var customName sql.NullString
+
+		scanErr := serviceRows.Scan(&id, &ipAddress, &serviceName, &customName, &lastSeen, &status)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+
+		result := map[string]interface{}{
+			"id":                 id,
+			"ip_address":         ipAddress,
+			"service_name":       serviceName,
+			"custom_name":        customName.String,
+			"last_seen":          lastSeen,
+			"status":             status,
+			"inbound_count":      0,
+			"client_count":       0,
+			"today_inbound_up":   0,
+			"today_inbound_down": 0,
+		}
+		serviceMap[id] = result
+		results = append(results, result)
+	}
+
+	// 查询今日入站流量（历史表）
+	todayRows, err := d.db.Query(`
+		SELECT service_id, SUM(daily_up) as today_up, SUM(daily_down) as today_down
+		FROM inbound_traffic_history
+		WHERE date = DATE('now', 'localtime')
+		GROUP BY service_id
+	`)
+	if err == nil {
+		defer todayRows.Close()
+		for todayRows.Next() {
+			var serviceID int
+			var todayUp, todayDown sql.NullInt64
+			err := todayRows.Scan(&serviceID, &todayUp, &todayDown)
+			if err == nil {
+				if service, exists := serviceMap[serviceID]; exists {
+					service["today_inbound_up"] = todayUp.Int64
+					service["today_inbound_down"] = todayDown.Int64
+				}
+			}
+		}
+	}
+
+	// 查询入站端口数量（基础表）
+	inboundCountRows, err := d.db.Query(`
+		SELECT service_id, COUNT(*) as inbound_count
+		FROM inbound_traffics
+		WHERE status = 'active'
+		GROUP BY service_id
+	`)
+	if err == nil {
+		defer inboundCountRows.Close()
+		for inboundCountRows.Next() {
+			var serviceID, count int
+			err := inboundCountRows.Scan(&serviceID, &count)
+			if err == nil {
+				if service, exists := serviceMap[serviceID]; exists {
+					service["inbound_count"] = count
+				}
+			}
+		}
+	}
+
+	// 查询用户数量（基础表）
+	clientCountRows, err := d.db.Query(`
+		SELECT service_id, COUNT(*) as client_count
+		FROM client_traffics
+		WHERE status = 'active'
+		GROUP BY service_id
+	`)
+	if err == nil {
+		defer clientCountRows.Close()
+		for clientCountRows.Next() {
+			var serviceID, count int
+			err := clientCountRows.Scan(&serviceID, &count)
+			if err == nil {
+				if service, exists := serviceMap[serviceID]; exists {
+					service["client_count"] = count
+				}
+			}
+		}
+	}
+
+	return results, nil
+}
+
+// 获取指定服务的详细流量信息
+func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, error) {
+	// 获取服务基本信息
+	var service Service
+	var rawIPAddress string
+	var customName sql.NullString
+	err := d.db.QueryRow(`
+		SELECT id, ip_address, service_name, custom_name, first_seen, last_seen, status
+		FROM services WHERE id = ?
+	`, serviceID).Scan(&service.ID, &rawIPAddress, &service.ServiceName, &customName,
+		&service.FirstSeen, &service.LastSeen, &service.Status)
+	if err != nil {
+		return nil, err
+	}
+	service.IPAddress = rawIPAddress
+
+	// 获取入站流量（基础信息）
+	inboundRows, err := d.db.Query(`
+		SELECT id, service_id, tag, port, custom_name, last_updated, status
+		FROM inbound_traffics WHERE service_id = ? AND status = 'active'
+		ORDER BY tag
+	`, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer inboundRows.Close()
+
+	var inboundTraffics []InboundTrafficRecord
+	for inboundRows.Next() {
+		var record InboundTrafficRecord
+		var customName sql.NullString
+		err := inboundRows.Scan(&record.ID, &record.ServiceID, &record.Tag, &record.Port, &customName,
+			&record.LastUpdated, &record.Status)
+		if err != nil {
+			return nil, err
+		}
+		record.CustomName = customName.String
+		// 查询今日流量
+		dbRow := d.db.QueryRow(`SELECT COALESCE(daily_up,0), COALESCE(daily_down,0) FROM inbound_traffic_history WHERE inbound_traffic_id = ? AND date = DATE('now', 'localtime')`, record.ID)
+		dbRow.Scan(&record.Up, &record.Down)
+		inboundTraffics = append(inboundTraffics, record)
+	}
+
+	// 获取客户端流量（基础信息）
+	clientRows, err := d.db.Query(`
+		SELECT id, service_id, email, custom_name, last_updated, status
+		FROM client_traffics WHERE service_id = ? AND status = 'active'
+		ORDER BY email
+	`, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer clientRows.Close()
+
+	var clientTraffics []ClientTrafficRecord
+	for clientRows.Next() {
+		var record ClientTrafficRecord
+		var customName sql.NullString
+		err := clientRows.Scan(&record.ID, &record.ServiceID, &record.Email, &customName, &record.LastUpdated, &record.Status)
+		if err != nil {
+			return nil, err
+		}
+		record.CustomName = customName.String
+		// 查询今日流量
+		dbRow := d.db.QueryRow(`SELECT COALESCE(daily_up,0), COALESCE(daily_down,0) FROM client_traffic_history WHERE client_traffic_id = ? AND date = DATE('now', 'localtime')`, record.ID)
+		dbRow.Scan(&record.Up, &record.Down)
+		clientTraffics = append(clientTraffics, record)
+	}
+
+	result := map[string]interface{}{
+		"service":          service,
+		"inbound_traffics": inboundTraffics,
+		"client_traffics":  clientTraffics,
+	}
+	return result, nil
+}
+
+// 删除服务及其所有相关数据
+func (d *Database) DeleteService(serviceID int) error {
+	log.Printf("开始删除服务ID: %d", serviceID)
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 删除历史记录
+	_, err = tx.Exec("DELETE FROM inbound_traffic_history WHERE service_id = ?", serviceID)
+	if err != nil {
+		return fmt.Errorf("删除历史记录失败: %v", err)
+	}
+
+	// 删除入站流量记录
+	_, err = tx.Exec("DELETE FROM inbound_traffics WHERE service_id = ?", serviceID)
+	if err != nil {
+		return fmt.Errorf("删除入站流量记录失败: %v", err)
+	}
+
+	// 删除客户端流量记录
+	_, err = tx.Exec("DELETE FROM client_traffics WHERE service_id = ?", serviceID)
+	if err != nil {
+		return fmt.Errorf("删除客户端流量记录失败: %v", err)
+	}
+
+	// 删除原始请求记录
+	_, err = tx.Exec("DELETE FROM raw_requests WHERE service_id = ?", serviceID)
+	if err != nil {
+		return fmt.Errorf("删除原始请求记录失败: %v", err)
+	}
+
+	// 删除服务记录
+	_, err = tx.Exec("DELETE FROM services WHERE id = ?", serviceID)
+	if err != nil {
+		return fmt.Errorf("删除服务记录失败: %v", err)
+	}
+
+	log.Printf("服务ID %d 删除成功", serviceID)
+	return tx.Commit()
+}
+
+// 每日流量统计任务（需要在每日0点执行）
+func (d *Database) DailyTrafficSummary() error {
+	log.Println("开始执行每日流量统计...")
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 处理入站流量记录
+	err = d.processDailyInboundTraffic(tx)
+	if err != nil {
+		return err
+	}
+
+	// 处理客户端流量记录
+	err = d.processDailyClientTraffic(tx)
+	if err != nil {
+		return err
+	}
+
+	log.Println("每日流量统计完成")
+	return tx.Commit()
+}
+
+// 处理入站流量的每日统计
+func (d *Database) processDailyInboundTraffic(tx *sql.Tx) error {
+	// 获取所有活跃的入站流量记录
+	rows, err := tx.Query(`
+		SELECT id, service_id, tag, up, down
+		FROM inbound_traffics 
+		WHERE status = 'active'
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, serviceID int
+		var tag string
+		var dailyUp, dailyDown int64
+
+		err := rows.Scan(&id, &serviceID, &tag, &dailyUp, &dailyDown)
+		if err != nil {
+			return err
+		}
+
+		// 如果今日有流量，记录到历史表
+		if dailyUp > 0 || dailyDown > 0 {
+			_, err = tx.Exec(`
+				INSERT OR REPLACE INTO inbound_traffic_history 
+				(inbound_traffic_id, service_id, tag, date, daily_up, daily_down, created_at)
+				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
+			`, id, serviceID, tag, dailyUp, dailyDown)
+			if err != nil {
+				return err
+			}
+
+			log.Printf("端口 %s: 记录昨日流量 up=%d, down=%d", tag, dailyUp, dailyDown)
+		}
+
+		// 清零今日流量
+		_, err = tx.Exec(`
+			UPDATE inbound_traffics 
+			SET up = 0, down = 0
+			WHERE id = ?
+		`, id)
+		if err != nil {
+			return err
+		}
+
+		log.Printf("端口 %s: 清零今日流量", tag)
+	}
+
+	return nil
+}
+
+// 处理客户端流量的每日统计
+func (d *Database) processDailyClientTraffic(tx *sql.Tx) error {
+	// 获取所有活跃的客户端流量记录
+	rows, err := tx.Query(`
+		SELECT id, service_id, email, up, down
+		FROM client_traffics 
+		WHERE status = 'active'
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, serviceID int
+		var email string
+		var dailyUp, dailyDown int64
+
+		err := rows.Scan(&id, &serviceID, &email, &dailyUp, &dailyDown)
+		if err != nil {
+			return err
+		}
+
+		// 如果今日有流量，记录到历史表
+		if dailyUp > 0 || dailyDown > 0 {
+			_, err = tx.Exec(`
+				INSERT OR REPLACE INTO client_traffic_history 
+				(client_traffic_id, service_id, email, date, daily_up, daily_down, created_at)
+				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
+			`, id, serviceID, email, dailyUp, dailyDown)
+			if err != nil {
+				return err
+			}
+
+			log.Printf("用户 %s: 记录昨日流量 up=%d, down=%d", email, dailyUp, dailyDown)
+		}
+
+		// 清零今日流量
+		_, err = tx.Exec(`
+			UPDATE client_traffics 
+			SET up = 0, down = 0
+			WHERE id = ?
+		`, id)
+		if err != nil {
+			return err
+		}
+
+		log.Printf("用户 %s: 清零今日流量", email)
+	}
+
+	return nil
+}
+
+// 创建/更新hy2配置表（支持多条配置）
+func (d *Database) InitHy2ConfigTable() error {
+	sql := `
+	CREATE TABLE IF NOT EXISTS hy2_config (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		source_api_password TEXT NOT NULL DEFAULT 'admin',
+		source_api_host TEXT NOT NULL DEFAULT '',
+		source_api_port TEXT NOT NULL DEFAULT '',
+		target_api_url TEXT NOT NULL DEFAULT ''
+	);
+	`
+	_, err := d.db.Exec(sql)
+	return err
+}
+
+// 获取全部hy2配置
+func (d *Database) GetAllHy2Configs() ([]Hy2Config, error) {
+	rows, err := d.db.Query(`SELECT id, source_api_password, source_api_host, source_api_port, target_api_url FROM hy2_config`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var configs []Hy2Config
+	for rows.Next() {
+		var cfg Hy2Config
+		err := rows.Scan(&cfg.ID, &cfg.SourceAPIPassword, &cfg.SourceAPIHost, &cfg.SourceAPIPort, &cfg.TargetAPIURL)
+		if err != nil {
+			return nil, err
+		}
+		configs = append(configs, cfg)
+	}
+	return configs, nil
+}
+
+// 新增hy2配置
+func (d *Database) AddHy2Config(cfg *Hy2Config) error {
+	_, err := d.db.Exec(`INSERT INTO hy2_config (source_api_password, source_api_host, source_api_port, target_api_url) VALUES (?, ?, ?, ?)`,
+		cfg.SourceAPIPassword, cfg.SourceAPIHost, cfg.SourceAPIPort, cfg.TargetAPIURL)
+	return err
+}
+
+// 更新hy2配置
+func (d *Database) UpdateHy2Config(cfg *Hy2Config) error {
+	_, err := d.db.Exec(`UPDATE hy2_config SET source_api_password=?, source_api_host=?, source_api_port=?, target_api_url=? WHERE id=?`,
+		cfg.SourceAPIPassword, cfg.SourceAPIHost, cfg.SourceAPIPort, cfg.TargetAPIURL, cfg.ID)
+	return err
+}
+
+// 删除hy2配置
+func (d *Database) DeleteHy2Config(id int) error {
+	_, err := d.db.Exec(`DELETE FROM hy2_config WHERE id=?`, id)
+	return err
+}
+
+// Database结构体方法：返回原始*sql.DB
+func (d *Database) GetRawDB() *sql.DB {
+	return d.db
+}
+
+--- 文件内容结束 (End of Content) ---
+
+--- 文件路径 (File Path): ./database/api.go ---
+
+package database
+
+import (
+	"database/sql"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// 数据库API处理器
+type DatabaseAPI struct {
+	db *Database
+}
+
+// 创建数据库API处理器
+func NewDatabaseAPI(db *Database) *DatabaseAPI {
+	return &DatabaseAPI{db: db}
+}
+
+// 注册API路由
+func (api *DatabaseAPI) RegisterRoutes(r *gin.Engine) {
+	// 数据库相关API（需要认证）
+	dbGroup := r.Group("/api/db")
+	dbGroup.Use(AuthMiddleware()) // 添加认证中间件
+	{
+		// 服务管理
+		dbGroup.GET("/services", api.GetServices)
+		dbGroup.GET("/services/:id", api.GetServiceTraffic) // 直接使用GetServiceTraffic
+		dbGroup.GET("/services/:id/traffic", api.GetServiceTraffic)
+		dbGroup.DELETE("/services/:id", api.DeleteService)
+
+		// 流量统计
+		dbGroup.GET("/traffic/history", api.GetTrafficHistory)
+		dbGroup.GET("/traffic/weekly/:service_id", api.GetWeeklyTraffic)
+		dbGroup.GET("/traffic/monthly/:service_id", api.GetMonthlyTraffic)
+
+		// 手动触发每日统计
+		dbGroup.POST("/daily-summary", api.TriggerDailySummary)
+
+		// 端口和用户详情
+		dbGroup.GET("/port-detail/:service_id/:tag", api.GetPortDetail)
+		dbGroup.GET("/user-detail/:service_id/:email", api.GetUserDetail)
+
+		// 自定义名称管理
+		dbGroup.PUT("/services/:id/custom-name", api.UpdateServiceCustomName)
+		dbGroup.PUT("/inbound/:service_id/:tag/custom-name", api.UpdateInboundCustomName)
+		dbGroup.PUT("/client/:service_id/:email/custom-name", api.UpdateClientCustomName)
+
+		// 下载历史数据
+		dbGroup.GET("/download/port-history/:service_id/:tag", api.DownloadPortHistory)
+		dbGroup.GET("/download/user-history/:service_id/:email", api.DownloadUserHistory)
+	}
+}
+
+// 获取所有服务列表
+func (api *DatabaseAPI) GetServices(c *gin.Context) {
+	services, err := api.db.GetServiceSummary()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "获取服务列表失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取服务列表成功",
+		"data":    services,
+	})
+}
+
+// 获取服务流量详情
+func (api *DatabaseAPI) GetServiceTraffic(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	traffic, err := api.db.GetServiceTraffic(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "获取服务流量失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取服务流量成功",
+		"data":    traffic,
+	})
+}
+
+// 删除服务及其所有相关数据
+func (api *DatabaseAPI) DeleteService(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	err = api.db.DeleteService(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "删除服务失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "服务删除成功",
+		"data": gin.H{
+			"deleted_service_id": id,
+		},
+	})
+}
+
+// 获取流量历史记录
+func (api *DatabaseAPI) GetTrafficHistory(c *gin.Context) {
+	// 获取查询参数
+	serviceID := c.Query("service_id")
+	tag := c.Query("tag")
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	// 构建查询条件
+	query := `
+		SELECT 
+			ith.date,
+			ith.tag,
+			s.ip_address,
+			ith.daily_up,
+			ith.daily_down,
+			ith.daily_up + ith.daily_down as total_daily
+		FROM inbound_traffic_history ith
+		JOIN services s ON ith.service_id = s.id
+		WHERE 1=1
+	`
+	args := []interface{}{}
+
+	if serviceID != "" {
+		query += " AND ith.service_id = ?"
+		args = append(args, serviceID)
+	}
+
+	if tag != "" {
+		query += " AND ith.tag = ?"
+		args = append(args, tag)
+	}
+
+	if startDate != "" {
+		query += " AND ith.date >= ?"
+		args = append(args, startDate)
+	}
+
+	if endDate != "" {
+		query += " AND ith.date <= ?"
+		args = append(args, endDate)
+	}
+
+	query += " ORDER BY ith.date DESC, ith.tag"
+
+	rows, err := api.db.db.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询流量历史失败: " + err.Error(),
+		})
+		return
+	}
+	defer rows.Close()
+
+	var history []map[string]interface{}
+	for rows.Next() {
+		var date, tag, ipAddress string
+		var dailyUp, dailyDown, totalDaily int64
+
+		err := rows.Scan(&date, &tag, &ipAddress, &dailyUp, &dailyDown, &totalDaily)
+		if err != nil {
+			continue
+		}
+
+		record := map[string]interface{}{
+			"date":        date,
+			"tag":         tag,
+			"ip_address":  ipAddress,
+			"daily_up":    dailyUp,
+			"daily_down":  dailyDown,
+			"total_daily": totalDaily,
+		}
+		history = append(history, record)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取流量历史成功",
+		"data":    history,
+	})
+}
+
+// 获取服务7天流量数据
+func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	// 获取过去7天的日期（从6天前到今天，今天在最右边）
+	dates := make([]string, 7)
+	trafficData := make(map[string]map[string]int64)
+	for i := 0; i < 7; i++ {
+		date := time.Now().In(time.Local).AddDate(0, 0, -(6 - i))
+		dateStr := date.Format("2006-01-02")
+		dates[i] = dateStr
+		trafficData[dateStr] = map[string]int64{
+			"upload":   0,
+			"download": 0,
+		}
+	}
+
+	// 查询7天内所有历史流量（包含今天），全部用 localtime
+	historyQuery := `
+		SELECT 
+			ith.date,
+			SUM(ith.daily_up) as total_up,
+			SUM(ith.daily_down) as total_down
+		FROM inbound_traffic_history ith
+		WHERE ith.service_id = ? AND ith.date >= DATE('now', '-6 days', 'localtime') AND ith.date <= DATE('now', 'localtime')
+		GROUP BY ith.date
+		ORDER BY ith.date
+	`
+
+	historyRows, err := api.db.db.Query(historyQuery, serviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询历史流量失败: " + err.Error(),
+		})
+		return
+	}
+	defer historyRows.Close()
+
+	fmt.Println("开始遍历 historyRows")
+	count := 0
+	for historyRows.Next() {
+		count++
+		var date string
+		var totalUp, totalDown int64
+		err := historyRows.Scan(&date, &totalUp, &totalDown)
+		if err != nil {
+			continue
+		}
+		fmt.Printf("数据库查到的date: '%s', totalUp: %d, totalDown: %d\n", date, totalUp, totalDown)
+		date = strings.TrimSpace(date)
+		if len(date) > 10 {
+			date = date[:10]
+		}
+		// 兼容数据库查出来的 date 和 dates 数组格式
+		found := false
+		for _, d := range dates {
+			if strings.TrimSpace(d) == date {
+				trafficData[d]["upload"] = totalUp
+				trafficData[d]["download"] = totalDown
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Printf("未命中trafficData，date='%s', dates=%v\n", date, dates)
+		}
+	}
+	fmt.Printf("historyRows 总数: %d\n", count)
+	fmt.Printf("最终 trafficData: %+v\n", trafficData)
+
+	uploadData := make([]int64, 7)
+	downloadData := make([]int64, 7)
+	for i, date := range dates {
+		if data, exists := trafficData[date]; exists {
+			uploadData[i] = data["upload"]
+			downloadData[i] = data["download"]
+		}
+	}
+
+	result := gin.H{
+		"dates":         dates,
+		"upload_data":   uploadData,
+		"download_data": downloadData,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取7天流量数据成功",
+		"data":    result,
+	})
+}
+
+// 获取服务30天流量数据
+func (api *DatabaseAPI) GetMonthlyTraffic(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	// 获取过去30天的日期（从29天前到今天，今天在最右边）
+	dates := make([]string, 30)
+	trafficData := make(map[string]map[string]int64)
+	for i := 0; i < 30; i++ {
+		date := time.Now().In(time.Local).AddDate(0, 0, -(29 - i))
+		dateStr := date.Format("2006-01-02")
+		dates[i] = dateStr
+		trafficData[dateStr] = map[string]int64{
+			"upload":   0,
+			"download": 0,
+		}
+	}
+
+	// 查询30天内所有历史流量（包含今天），全部用 localtime
+	historyQuery := `
+		SELECT 
+			ith.date,
+			SUM(ith.daily_up) as total_up,
+			SUM(ith.daily_down) as total_down
+		FROM inbound_traffic_history ith
+		WHERE ith.service_id = ? AND ith.date >= DATE('now', '-29 days', 'localtime') AND ith.date <= DATE('now', 'localtime')
+		GROUP BY ith.date
+		ORDER BY ith.date
+	`
+
+	historyRows, err := api.db.db.Query(historyQuery, serviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询历史流量失败: " + err.Error(),
+		})
+		return
+	}
+	defer historyRows.Close()
+
+	fmt.Println("开始遍历 historyRows")
+	count := 0
+	for historyRows.Next() {
+		count++
+		var date string
+		var totalUp, totalDown int64
+		err := historyRows.Scan(&date, &totalUp, &totalDown)
+		if err != nil {
+			continue
+		}
+		fmt.Printf("数据库查到的date: '%s', totalUp: %d, totalDown: %d\n", date, totalUp, totalDown)
+		date = strings.TrimSpace(date)
+		if len(date) > 10 {
+			date = date[:10]
+		}
+		// 兼容数据库查出来的 date 和 dates 数组格式
+		found := false
+		for _, d := range dates {
+			if strings.TrimSpace(d) == date {
+				trafficData[d]["upload"] = totalUp
+				trafficData[d]["download"] = totalDown
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Printf("未命中trafficData，date='%s', dates=%v\n", date, dates)
+		}
+	}
+	fmt.Printf("historyRows 总数: %d\n", count)
+	fmt.Printf("最终 trafficData: %+v\n", trafficData)
+
+	uploadData := make([]int64, 30)
+	downloadData := make([]int64, 30)
+	for i, date := range dates {
+		if data, exists := trafficData[date]; exists {
+			uploadData[i] = data["upload"]
+			downloadData[i] = data["download"]
+		}
+	}
+
+	result := gin.H{
+		"dates":         dates,
+		"upload_data":   uploadData,
+		"download_data": downloadData,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取30天流量数据成功",
+		"data":    result,
+	})
+}
+
+// 手动触发每日统计
+func (api *DatabaseAPI) TriggerDailySummary(c *gin.Context) {
+	err := api.db.DailyTrafficSummary()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "执行每日统计失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "每日统计执行成功",
+		"data": gin.H{
+			"executed_at": time.Now().In(time.Local).Format("2006-01-02 15:04:05"),
+		},
+	})
+}
+
+// 获取端口详细流量信息
+func (api *DatabaseAPI) GetPortDetail(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	tag := c.Param("tag")
+
+	if serviceIDStr == "" || tag == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "缺少服务ID或端口标签参数",
+		})
+		return
+	}
+
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	// 获取端口基本信息
+	var ipAddress, serviceName, tagName string
+	var customName sql.NullString
+	var port int
+	var lastSeen string
+	portQuery := `
+		SELECT 
+			s.ip_address,
+			s.service_name,
+			it.tag,
+			it.port,
+			it.last_updated as last_seen,
+			it.custom_name
+		FROM inbound_traffics it
+		JOIN services s ON it.service_id = s.id
+		WHERE it.service_id = ? AND it.tag = ?
+	`
+	err = api.db.db.QueryRow(portQuery, serviceID, tag).Scan(
+		&ipAddress, &serviceName, &tagName, &port, &lastSeen, &customName,
+	)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "端口信息不存在: " + err.Error(),
+		})
+		return
+	}
+
+	// 查询今日流量
+	var currentUp, currentDown int64
+	err = api.db.db.QueryRow(`SELECT COALESCE(daily_up,0), COALESCE(daily_down,0) FROM inbound_traffic_history WHERE service_id = ? AND tag = ? AND date = DATE('now', 'localtime')`, serviceID, tag).Scan(&currentUp, &currentDown)
+	if err != nil && err != sql.ErrNoRows {
+		currentUp, currentDown = 0, 0
+	}
+
+	// 计算历史累计流量
+	var totalUp, totalDown int64
+	historySumQuery := `
+		SELECT 
+			COALESCE(SUM(daily_up), 0) as total_up,
+			COALESCE(SUM(daily_down), 0) as total_down
+		FROM inbound_traffic_history
+		WHERE service_id = ? AND tag = ?
+	`
+	err = api.db.db.QueryRow(historySumQuery, serviceID, tag).Scan(&totalUp, &totalDown)
+	if err != nil {
+		totalUp = currentUp
+		totalDown = currentDown
+	}
+
+	// 检查端口是否真正活跃（最近有流量）
+	isActive := false
+	if lastSeen != "" {
+		var lastSeenTime time.Time
+		timeFormats := []string{
+			"2006-01-02 15:04:05",
+			time.RFC3339,
+			"2006-01-02T15:04:05Z",
+		}
+		for _, format := range timeFormats {
+			if t, err := time.Parse(format, lastSeen); err == nil {
+				lastSeenTime = t
+				break
+			}
+		}
+		if !lastSeenTime.IsZero() {
+			timeDiff := time.Since(lastSeenTime).Seconds()
+			isActive = timeDiff <= 60 && (currentUp > 0 || currentDown > 0)
+		}
+	}
+
+	portInfo := map[string]interface{}{
+		"ip_address":   ipAddress,
+		"service_name": serviceName,
+		"tag":          tagName,
+		"port":         port,
+		"total_up":     totalUp,
+		"total_down":   totalDown,
+		"current_up":   currentUp,
+		"current_down": currentDown,
+		"last_seen":    lastSeen,
+		"is_active":    isActive,
+		"custom_name":  customName.String,
+	}
+
+	// 获取days参数，默认7天
+	days := 7
+	if d := c.Query("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 && v <= 30 {
+			days = v
+		}
+	}
+
+	// 构造最近days天的日期数组
+	dates := make([]string, days)
+	for i := 0; i < days; i++ {
+		date := time.Now().In(time.Local).AddDate(0, 0, -(days - 1 - i))
+		dateStr := date.Format("2006-01-02")
+		dates[i] = dateStr
+	}
+
+	// 查询历史流量，补全为0
+	historyQuery := `
+		SELECT date, daily_up, daily_down, daily_up + daily_down as total_daily
+		FROM inbound_traffic_history
+		WHERE service_id = ? AND tag = ? AND date >= DATE('now', ? || ' days', 'localtime') AND date <= DATE('now', 'localtime')
+	`
+	rows, err := api.db.db.Query(historyQuery, serviceID, tag, fmt.Sprintf("-%d", days-1))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询历史数据失败: " + err.Error(),
+		})
+		return
+	}
+	defer rows.Close()
+
+	historyMap := make(map[string]map[string]int64)
+	for rows.Next() {
+		var date string
+		var dailyUp, dailyDown, totalDaily int64
+		err := rows.Scan(&date, &dailyUp, &dailyDown, &totalDaily)
+		if err != nil {
+			continue
+		}
+		if len(date) > 10 {
+			date = date[:10]
+		}
+		historyMap[date] = map[string]int64{
+			"daily_up":    dailyUp,
+			"daily_down":  dailyDown,
+			"total_daily": totalDaily,
+		}
+	}
+
+	history := make([]map[string]interface{}, days)
+	for i, d := range dates {
+		item := map[string]interface{}{
+			"date":        d,
+			"daily_up":    int64(0),
+			"daily_down":  int64(0),
+			"total_daily": int64(0),
+		}
+		if v, ok := historyMap[d]; ok {
+			item["daily_up"] = v["daily_up"]
+			item["daily_down"] = v["daily_down"]
+			item["total_daily"] = v["total_daily"]
+		}
+		history[i] = item
+	}
+
+	result := gin.H{
+		"port_info": portInfo,
+		"history":   history,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取端口详情成功",
+		"data":    result,
+	})
+}
+
+// 获取用户详细流量信息
+func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
+	serviceID := c.Param("service_id")
+	email := c.Param("email")
+
+	if serviceID == "" || email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "缺少服务ID或用户邮箱参数",
+		})
+		return
+	}
+
+	var ipAddress, serviceName, userEmail, inboundTag string
+	var customName sql.NullString
+	var lastSeen string
+	var err error
+	userQuery := `
+		SELECT 
+			s.ip_address,
+			s.service_name,
+			ct.email,
+			'' as inbound_tag,
+			ct.last_updated as last_seen,
+			ct.custom_name
+		FROM client_traffics ct
+		JOIN services s ON ct.service_id = s.id
+		WHERE ct.service_id = ? AND ct.email = ?
+	`
+	err = api.db.db.QueryRow(userQuery, serviceID, email).Scan(
+		&ipAddress, &serviceName, &userEmail, &inboundTag, &lastSeen, &customName,
+	)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "用户信息不存在: " + err.Error(),
+		})
+		return
+	}
+
+	// 查询今日流量
+	var currentUp, currentDown int64
+	serviceIDInt, _ := strconv.Atoi(serviceID)
+	err = api.db.db.QueryRow(`SELECT COALESCE(daily_up,0), COALESCE(daily_down,0) FROM client_traffic_history WHERE client_traffic_id = (SELECT id FROM client_traffics WHERE service_id = ? AND email = ?) AND date = DATE('now', 'localtime')`, serviceIDInt, email).Scan(&currentUp, &currentDown)
+	if err != nil && err != sql.ErrNoRows {
+		currentUp, currentDown = 0, 0
+	}
+
+	// 计算用户历史累计流量
+	var totalUp, totalDown int64
+	userHistorySumQuery := `
+		SELECT 
+			COALESCE(SUM(daily_up), 0) as total_up,
+			COALESCE(SUM(daily_down), 0) as total_down
+		FROM client_traffic_history
+		WHERE service_id = ? AND email = ?
+	`
+	err = api.db.db.QueryRow(userHistorySumQuery, serviceID, email).Scan(&totalUp, &totalDown)
+	if err != nil {
+		totalUp = currentUp
+		totalDown = currentDown
+	}
+
+	userInfo := map[string]interface{}{
+		"ip_address":   ipAddress,
+		"service_name": serviceName,
+		"email":        userEmail,
+		"inbound_tag":  inboundTag,
+		"total_up":     totalUp,
+		"total_down":   totalDown,
+		"current_up":   currentUp,
+		"current_down": currentDown,
+		"last_seen":    lastSeen,
+		"custom_name":  customName.String,
+	}
+
+	// 获取days参数，默认7天
+	days := 7
+	if d := c.Query("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 && v <= 30 {
+			days = v
+		}
+	}
+
+	// 构造最近days天的日期数组
+	dates := make([]string, days)
+	for i := 0; i < days; i++ {
+		date := time.Now().In(time.Local).AddDate(0, 0, -(days - 1 - i))
+		dateStr := date.Format("2006-01-02")
+		dates[i] = dateStr
+	}
+
+	// 查询历史流量，补全为0
+	historyQuery := `
+		SELECT date, daily_up, daily_down, daily_up + daily_down as total_daily
+		FROM client_traffic_history
+		WHERE service_id = ? AND email = ? AND date >= DATE('now', ? || ' days', 'localtime') AND date <= DATE('now', 'localtime')
+	`
+	rows, err := api.db.db.Query(historyQuery, serviceIDInt, email, fmt.Sprintf("-%d", days-1))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询历史数据失败: " + err.Error(),
+		})
+		return
+	}
+	defer rows.Close()
+
+	historyMap := make(map[string]map[string]int64)
+	for rows.Next() {
+		var date string
+		var dailyUp, dailyDown, totalDaily int64
+		err := rows.Scan(&date, &dailyUp, &dailyDown, &totalDaily)
+		if err != nil {
+			continue
+		}
+		if len(date) > 10 {
+			date = date[:10]
+		}
+		historyMap[date] = map[string]int64{
+			"daily_up":    dailyUp,
+			"daily_down":  dailyDown,
+			"total_daily": totalDaily,
+		}
+	}
+
+	history := make([]map[string]interface{}, days)
+	for i, d := range dates {
+		item := map[string]interface{}{
+			"date":        d,
+			"daily_up":    int64(0),
+			"daily_down":  int64(0),
+			"total_daily": int64(0),
+		}
+		if v, ok := historyMap[d]; ok {
+			item["daily_up"] = v["daily_up"]
+			item["daily_down"] = v["daily_down"]
+			item["total_daily"] = v["total_daily"]
+		}
+		history[i] = item
+	}
+
+	result := gin.H{
+		"user_info": userInfo,
+		"history":   history,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取用户详情成功",
+		"data":    result,
+	})
+}
+
+// 更新服务自定义名称
+func (api *DatabaseAPI) UpdateServiceCustomName(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	var request struct {
+		CustomName string `json:"custom_name"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "请求参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新自定义名称
+	_, err = api.db.db.Exec("UPDATE services SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", request.CustomName, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "更新服务名称失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "服务名称更新成功",
+		"data": gin.H{
+			"service_id":  id,
+			"custom_name": request.CustomName,
+		},
+	})
+}
+
+// 更新入站端口自定义名称
+func (api *DatabaseAPI) UpdateInboundCustomName(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	tag := c.Param("tag")
+
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	var request struct {
+		CustomName string `json:"custom_name"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "请求参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新自定义名称
+	_, err = api.db.db.Exec("UPDATE inbound_traffics SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE service_id = ? AND tag = ?", request.CustomName, serviceID, tag)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "更新入站失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "入站更新成功",
+		"data": gin.H{
+			"service_id":  serviceID,
+			"tag":         tag,
+			"custom_name": request.CustomName,
+		},
+	})
+}
+
+// 更新客户端自定义名称
+func (api *DatabaseAPI) UpdateClientCustomName(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	email := c.Param("email")
+
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	var request struct {
+		CustomName string `json:"custom_name"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "请求参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 更新自定义名称
+	_, err = api.db.db.Exec("UPDATE client_traffics SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE service_id = ? AND email = ?", request.CustomName, serviceID, email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "更新用户名称失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "用户名称更新成功",
+		"data": gin.H{
+			"service_id":  serviceID,
+			"email":       email,
+			"custom_name": request.CustomName,
+		},
+	})
+}
+
+// 下载端口历史数据
+func (api *DatabaseAPI) DownloadPortHistory(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	tag := c.Param("tag")
+
+	if serviceIDStr == "" || tag == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "缺少服务ID或端口标签参数",
+		})
+		return
+	}
+
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	// 获取端口基本信息
+	var ipAddress, serviceName, tagName string
+	var port int
+
+	portQuery := `
+		SELECT 
+			s.ip_address,
+			s.service_name,
+			it.tag,
+			it.port
+		FROM inbound_traffics it
+		JOIN services s ON it.service_id = s.id
+		WHERE it.service_id = ? AND it.tag = ?
+	`
+
+	err = api.db.db.QueryRow(portQuery, serviceID, tag).Scan(
+		&ipAddress, &serviceName, &tagName, &port,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "端口信息不存在",
+		})
+		return
+	}
+
+	// 获取所有历史流量数据
+	historyQuery := `
+		SELECT 
+			date,
+			daily_up,
+			daily_down,
+			daily_up + daily_down as total_daily
+		FROM inbound_traffic_history
+		WHERE service_id = ? AND tag = ?
+		ORDER BY date DESC
+	`
+
+	rows, err := api.db.db.Query(historyQuery, serviceID, tag)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询历史数据失败: " + err.Error(),
+		})
+		return
+	}
+	defer rows.Close()
+
+	var history []map[string]interface{}
+	for rows.Next() {
+		var date string
+		var dailyUp, dailyDown, totalDaily int64
+
+		err := rows.Scan(&date, &dailyUp, &dailyDown, &totalDaily)
+		if err != nil {
+			continue
+		}
+
+		record := map[string]interface{}{
+			"date":        date,
+			"daily_up":    dailyUp,
+			"daily_down":  dailyDown,
+			"total_daily": totalDaily,
+		}
+		history = append(history, record)
+	}
+
+	// 生成CSV内容
+	csvContent := "日期,上传流量(Bytes),下载流量(Bytes),总流量(Bytes),上传流量(格式化),下载流量(格式化),总流量(格式化)\n"
+
+	for _, record := range history {
+		date := record["date"].(string)
+		dailyUp := record["daily_up"].(int64)
+		dailyDown := record["daily_down"].(int64)
+		totalDaily := record["total_daily"].(int64)
+
+		// 格式化流量显示
+		upFormatted := formatBytes(dailyUp)
+		downFormatted := formatBytes(dailyDown)
+		totalFormatted := formatBytes(totalDaily)
+
+		csvContent += fmt.Sprintf("%s,%d,%d,%d,%s,%s,%s\n",
+			date, dailyUp, dailyDown, totalDaily, upFormatted, downFormatted, totalFormatted)
+	}
+
+	// 设置响应头
+	filename := fmt.Sprintf("端口历史数据_%s_%s_%s.csv", serviceName, tag, time.Now().In(time.Local).Format("20060102"))
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Header("Content-Length", fmt.Sprintf("%d", len(csvContent)))
+
+	c.String(http.StatusOK, csvContent)
+}
+
+// 下载用户历史数据
+func (api *DatabaseAPI) DownloadUserHistory(c *gin.Context) {
+	serviceID := c.Param("service_id")
+	email := c.Param("email")
+
+	if serviceID == "" || email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "缺少服务ID或用户邮箱参数",
+		})
+		return
+	}
+
+	// 获取用户基本信息
+	var ipAddress, serviceName, userEmail string
+
+	userQuery := `
+		SELECT 
+			s.ip_address,
+			s.service_name,
+			ct.email
+		FROM client_traffics ct
+		JOIN services s ON ct.service_id = s.id
+		WHERE ct.service_id = ? AND ct.email = ?
+	`
+
+	serviceIDInt, err := strconv.Atoi(serviceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	err = api.db.db.QueryRow(userQuery, serviceIDInt, email).Scan(
+		&ipAddress, &serviceName, &userEmail,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "用户信息不存在: " + err.Error(),
+		})
+		return
+	}
+
+	// 获取所有历史流量数据
+	historyQuery := `
+		SELECT 
+			cth.date,
+			cth.daily_up,
+			cth.daily_down,
+			cth.daily_up + cth.daily_down as total_daily
+		FROM client_traffic_history cth
+		WHERE cth.service_id = ? AND cth.email = ?
+		ORDER BY cth.date DESC
+	`
+
+	rows, err := api.db.db.Query(historyQuery, serviceIDInt, email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询历史数据失败: " + err.Error(),
+		})
+		return
+	}
+	defer rows.Close()
+
+	var history []map[string]interface{}
+	for rows.Next() {
+		var date string
+		var dailyUp, dailyDown, totalDaily int64
+
+		err := rows.Scan(&date, &dailyUp, &dailyDown, &totalDaily)
+		if err != nil {
+			continue
+		}
+
+		record := map[string]interface{}{
+			"date":        date,
+			"daily_up":    dailyUp,
+			"daily_down":  dailyDown,
+			"total_daily": totalDaily,
+		}
+		history = append(history, record)
+	}
+
+	// 生成CSV内容
+	csvContent := "日期,上传流量(Bytes),下载流量(Bytes),总流量(Bytes),上传流量(格式化),下载流量(格式化),总流量(格式化)\n"
+
+	for _, record := range history {
+		date := record["date"].(string)
+		dailyUp := record["daily_up"].(int64)
+		dailyDown := record["daily_down"].(int64)
+		totalDaily := record["total_daily"].(int64)
+
+		// 格式化流量显示
+		upFormatted := formatBytes(dailyUp)
+		downFormatted := formatBytes(dailyDown)
+		totalFormatted := formatBytes(totalDaily)
+
+		csvContent += fmt.Sprintf("%s,%d,%d,%d,%s,%s,%s\n",
+			date, dailyUp, dailyDown, totalDaily, upFormatted, downFormatted, totalFormatted)
+	}
+
+	// 设置响应头
+	filename := fmt.Sprintf("用户历史数据_%s_%s_%s.csv", serviceName, email, time.Now().In(time.Local).Format("20060102"))
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Header("Content-Length", fmt.Sprintf("%d", len(csvContent)))
+
+	c.String(http.StatusOK, csvContent)
+}
+
+// 格式化字节数
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+--- 文件内容结束 (End of Content) ---
+
+--- 文件路径 (File Path): ./tool.sh ---
+
+#!/bin/sh
+
+# --- 配置区 ---
+
+# 输出文件名
+OUTPUT_FILE="code_summary_for_llm.txt"
+
+# 要包含的文件扩展名列表（用空格分隔）
+# 你可以根据需要添加或删除扩展名
+FILE_EXTENSIONS=".go .sql .py .js .java .html .css .ts .sh .yml .yaml .json .xml .c .cpp .h .hpp .cs .rb .php .rs .kt"
+
+# 要忽略的目录列表（用空格分隔）
+# 例如："./web/node_modules" "./some_other_dir"
+EXCLUDE_DIRS="./web/node_modules" 
+
+# --- 脚本逻辑 ---
+
+echo "开始收集代码文件..."
+echo "目标文件扩展名: ${FILE_EXTENSIONS}"
+echo "要忽略的目录: ${EXCLUDE_DIRS}"
+echo "输出文件: ${OUTPUT_FILE}"
+echo ""
+
+# 1. 清空或创建输出文件
+# 使用 > "$OUTPUT_FILE" 来覆盖现有文件，如果文件不存在则创建它
+> "$OUTPUT_FILE"
+if [ $? -ne 0 ]; then
+    echo "错误：无法写入输出文件 '$OUTPUT_FILE'。请检查权限。"
+    exit 1
+fi
+
+# 2. 构建 find 命令的参数
+# 使用 find 来递归查找文件，并根据扩展名过滤
+
+# 构建排除目录的 find 参数
+EXCLUDE_ARGS=""
+for dir in $EXCLUDE_DIRS; do
+    # 确保目录非空且存在，避免不必要的警告
+    if [ -n "$dir" ]; then
+        # -path "$dir" -prune: 匹配到该目录时，不再深入查找（prune）
+        # -o: OR 逻辑，继续处理其他文件
+        EXCLUDE_ARGS="$EXCLUDE_ARGS -path \"$dir\" -prune -o"
+    fi
+done
+
+# 构建查找文件的 find 参数
+FIND_ARGS=""
+FIRST_EXT=true
+for ext in $FILE_EXTENSIONS; do
+    # 确保扩展名非空
+    if [ -n "$ext" ]; then
+        if [ "$FIRST_EXT" = true ]; then
+            FIND_ARGS="-name \"*$ext\""
+            FIRST_EXT=false
+        else
+            FIND_ARGS="$FIND_ARGS -o -name \"*$ext\""
+        fi
+    fi
+done
+
+# 检查是否找到了任何扩展名
+if [ -z "$FIND_ARGS" ]; then
+    echo "错误：未配置任何要包含的文件扩展名。"
+    exit 1
+fi
+
+# 组合查找和排除的 find 命令
+# .                  : 从当前目录开始查找
+# \( $EXCLUDE_ARGS -false \) : 这是一个组合条件，用于处理排除的目录。
+#                           -path "$dir" -prune -o 会为每个排除目录生成 `-path "dir" -prune -o`。
+#                           最后的 `-false` 结合 `-o`，使得排除目录的整个表达式为真（但由于 prune，不会深入）。
+# -o                 : OR 逻辑，将排除条件和查找条件分开
+# -type f            : 只查找普通文件
+# \( $FIND_ARGS \)  : 查找符合设定扩展名的文件
+# -print0            : 使用 null 字符作为分隔符打印文件名，安全处理包含特殊字符的文件名
+FIND_COMMAND="find . \( $EXCLUDE_ARGS -false \) -o -type f \( $FIND_ARGS \) -print0"
+
+# echo "调试：find 命令: $FIND_COMMAND" # 如果需要调试，取消此行注释
+
+# 3. 遍历找到的文件并处理
+# 使用 eval 来正确执行包含特殊字符（如引号）的 FIND_COMMAND
+# 使用 while IFS= read -r -d $'\0' 来安全地逐行读取 find 的输出
+eval "$FIND_COMMAND" | while IFS= read -r -d $'\0' file; do
+    echo "正在处理: $file"
+
+    # 添加文件路径和分隔符到输出文件
+    echo "--- 文件路径 (File Path): $file ---" >> "$OUTPUT_FILE"
+    echo "" >> "$OUTPUT_FILE" # 在路径后添加空行
+
+    # 添加文件内容到输出文件
+    # 使用 cat 读取文件内容并追加 >>
+    if cat "$file" >> "$OUTPUT_FILE"; then
+        # 成功读取并追加内容
+        echo "" >> "$OUTPUT_FILE" # 在内容后添加空行
+        echo "--- 文件内容结束 (End of Content) ---" >> "$OUTPUT_FILE"
+    else
+        # 读取文件时可能发生错误 (例如，权限问题)
+        echo "" >> "$OUTPUT_FILE" # 依然添加空行
+        echo "[错误: 无法读取文件内容 - $file]" >> "$OUTPUT_FILE"
+        echo "--- 文件内容结束 (End of Content) ---" >> "$OUTPUT_FILE"
+    fi
+     # 在每个文件条目之间添加一个空行以增加可读性
+    echo "" >> "$OUTPUT_FILE"
+
+done
+
+# 检查 find 命令本身是否出错（例如，无法访问某些目录）
+# 注意：这只能捕获 find 命令本身的错误，无法捕获 while 循环内部的 cat 错误（已在循环内处理）
+# && [ ! -s "$OUTPUT_FILE" ] 是用来判断如果 find 命令本身出错，但输出文件是空的，则显示更明确的警告。
+if [ $? -ne 0 ] && [ ! -s "$OUTPUT_FILE" ]; then
+     echo "警告：`find` 命令执行时可能遇到问题，或者没有找到匹配的文件。"
+fi
+
+echo "----------------------------------------"
+echo "代码文件汇总完成！"
+echo "结果已保存到: ${OUTPUT_FILE}"
+echo "请检查 '$OUTPUT_FILE' 文件。"
+echo "提示：如果文件非常大，请注意可能产生的文本文件大小。"
+
+exit 0
+
+--- 文件内容结束 (End of Content) ---
+
+--- 文件路径 (File Path): ./main.go ---
+
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"xtrafficdash/database"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+)
+
+// 配置结构体
+type Config struct {
+	ListenPort   int    `json:"listen_port"`
+	DebugMode    bool   `json:"debug_mode"`
+	LogLevel     string `json:"log_level"`
+	DatabasePath string `json:"database_path"`
+}
+
+// 响应数据结构体
+type ResponseData struct {
+	Success bool        `json:"success"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
+}
+
+var (
+	config *Config
+	logger *logrus.Logger
+	db     *database.Database
+)
+
+// 环境变量读取函数
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		return strings.ToLower(value) == "true"
+	}
+	return defaultValue
+}
+
+func setTimezone() {
+	tz := os.Getenv("TZ")
+	if tz == "" {
+		tz = "Asia/Shanghai"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		panic("无效的时区: " + tz)
+	}
+	time.Local = loc
+}
+
+func init() {
+	setTimezone()
+	// 初始化日志
+	logger = logrus.New()
+	logger.SetFormatter(&logrus.JSONFormatter{})
+	logger.SetOutput(os.Stdout)
+
+	// 从环境变量读取配置
+	config = &Config{
+		ListenPort:   getEnvAsInt("LISTEN_PORT", 37022),
+		DebugMode:    getEnvAsBool("DEBUG_MODE", false),
+		LogLevel:     getEnv("LOG_LEVEL", "info"),
+		DatabasePath: getEnv("DATABASE_PATH", "xtrafficdash.db"),
+	}
+
+	// 设置日志级别
+	switch config.LogLevel {
+	case "debug":
+		logger.SetLevel(logrus.DebugLevel)
+	case "info":
+		logger.SetLevel(logrus.InfoLevel)
+	case "warn":
+		logger.SetLevel(logrus.WarnLevel)
+	case "error":
+		logger.SetLevel(logrus.ErrorLevel)
+	default:
+		logger.SetLevel(logrus.InfoLevel)
+	}
+
+	// 初始化JWT
+	database.InitJWT()
+
+	// 初始化数据库
+	var err error
+	db, err = database.OpenDatabase(config.DatabasePath)
+	if err != nil {
+		logger.Errorf("初始化数据库失败: %v", err)
+	} else {
+		logger.Info("数据库初始化成功")
+	}
+
+	// 初始化hy2配置表
+	if db != nil {
+		err := db.InitHy2ConfigTable()
+		if err != nil {
+			logger.Errorf("初始化hy2配置表失败: %v", err)
+		}
+	}
+}
+
+func main() {
+	logger.Info("启动XTrafficDash...")
+	logger.Infof("监听端口: %d", config.ListenPort)
+	logger.Infof("数据库路径: %s", config.DatabasePath)
+
+	// 设置Gin模式
+	if config.DebugMode {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	// 创建Gin路由
+	r := gin.New()
+
+	// 使用中间件
+	r.Use(gin.Logger())
+	r.Use(gin.Recovery())
+	r.Use(corsMiddleware())
+
+	// 设置路由
+	setupRoutes(r)
+
+	// 启动服务器
+	addr := fmt.Sprintf("0.0.0.0:%d", config.ListenPort)
+	logger.Infof("服务器启动在地址 %s", addr)
+
+	// 启动hy2流量同步定时任务（自动执行）
+	go startHy2SyncTask()
+
+	if err := r.Run(addr); err != nil {
+		logger.Fatalf("服务器启动失败: %v", err)
+	}
+}
+
+// 设置路由
+func setupRoutes(r *gin.Engine) {
+	// 健康检查
+	r.GET("/health", healthCheck)
+	r.GET("/api/health", healthCheck)
+
+	// 认证相关路由（不需要认证）
+	r.POST("/api/auth/login", database.HandleLogin)
+	r.GET("/api/auth/verify", database.HandleVerifyToken)
+
+	// 接收流量数据的API接口
+	r.POST("/api/traffic", handleTraffic)
+
+	// 注册数据库API路由（需要认证）
+	if db != nil {
+		dbAPI := database.NewDatabaseAPI(db)
+		dbAPI.RegisterRoutes(r)
+	}
+
+	// 静态文件服务（用于前端）
+	// 尝试多个可能的路径
+	webDistPaths := []string{
+		"../web/dist",   // 开发环境（从backend目录运行）
+		"./web/dist",    // 开发环境（从项目根目录运行）
+		"/app/web/dist", // Docker环境
+	}
+
+	var webDistPath string
+	for _, path := range webDistPaths {
+		if _, err := os.Stat(path); err == nil {
+			webDistPath = path
+			logger.Infof("找到web/dist目录: %s", path)
+			break
+		}
+	}
+
+	if webDistPath != "" {
+		r.Static("/assets", webDistPath+"/assets")
+		r.StaticFile("/", webDistPath+"/index.html")
+		r.StaticFile("/favicon.svg", webDistPath+"/favicon.svg")
+		r.StaticFile("/site.webmanifest", webDistPath+"/site.webmanifest")
+	} else {
+		logger.Warn("未找到web/dist目录，静态文件服务将不可用")
+	}
+
+	// 添加调试路由
+	r.GET("/debug", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "Debug endpoint working",
+			"time":    time.Now(),
+			"path":    c.Request.URL.Path,
+		})
+	})
+
+	r.GET("/api/hy2-configs", getAllHy2ConfigsHandler)
+	r.POST("/api/hy2-configs", saveAllHy2ConfigsHandler)
+	r.POST("/api/hy2-configs/add", addHy2ConfigHandler)
+	r.POST("/api/hy2-configs/update", updateHy2ConfigHandler)
+	r.DELETE("/api/hy2-configs/:id", deleteHy2ConfigHandler)
+
+	// 处理所有其他静态文件请求
+	r.NoRoute(func(c *gin.Context) {
+		logger.Infof("NoRoute: %s", c.Request.URL.Path)
+		// 如果不是API请求，返回index.html（用于SPA路由）
+		if !strings.HasPrefix(c.Request.URL.Path, "/api") {
+			c.File("/app/web/dist/index.html")
+		} else {
+			c.JSON(404, gin.H{"error": "API endpoint not found"})
+		}
+	})
+}
+
+// CORS中间件
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// 健康检查
+func healthCheck(c *gin.Context) {
+	dbStatus := "disconnected"
+	if db != nil {
+		dbStatus = "connected"
+	}
+
+	c.JSON(200, ResponseData{
+		Success: true,
+		Message: "服务正常运行",
+		Data: map[string]interface{}{
+			"timestamp": time.Now(),
+			"version":   "2.0.0",
+			"status":    "healthy",
+			"database":  dbStatus,
+		},
+	})
+}
+
+// 处理流量数据的专用处理器
+func handleTraffic(c *gin.Context) {
+	// 读取请求体
+	bodyBytes, err := c.GetRawData()
+	if err != nil {
+		logger.Errorf("读取请求体失败: %v", err)
+		c.JSON(400, ResponseData{
+			Success: false,
+			Error:   "读取请求体失败",
+		})
+		return
+	}
+
+	// 优先读取 X-Real-Ip header
+	realIP := c.GetHeader("X-Real-Ip")
+	if realIP == "" {
+		realIP = c.ClientIP()
+	}
+
+	// 构建请求数据
+	requestData := map[string]interface{}{
+		"timestamp":    time.Now(),
+		"method":       c.Request.Method,
+		"path":         c.Request.URL.Path,
+		"headers":      c.Request.Header,
+		"query_params": c.Request.URL.Query(),
+		"raw_body":     string(bodyBytes),
+		"client_ip":    realIP,
+		"user_agent":   c.Request.UserAgent(),
+	}
+
+	// 简化日志输出
+	logger.Infof("收到流量数据请求 - IP: %s, 数据长度: %d bytes", requestData["client_ip"], len(requestData["raw_body"].(string)))
+
+	// 处理数据库存储
+	if db != nil {
+		// 尝试解析为流量数据
+		var trafficData database.TrafficData
+		if err := json.Unmarshal(bodyBytes, &trafficData); err == nil {
+			// 成功解析为流量数据，存储到数据库
+			err = db.ProcessTrafficData(requestData["client_ip"].(string), requestData["user_agent"].(string), requestData["raw_body"].(string), &trafficData)
+			if err != nil {
+				logger.Errorf("存储流量数据失败: %v", err)
+			} else {
+				logger.Infof("流量数据已存储到数据库")
+			}
+		} else {
+			logger.Warnf("请求体不是有效的流量数据格式: %v", err)
+		}
+	}
+
+	c.JSON(200, ResponseData{
+		Success: true,
+		Message: "流量数据接收成功",
+		Data: map[string]interface{}{
+			"timestamp": requestData["timestamp"],
+		},
+	})
+}
+
+// 获取hy2配置
+func getHy2ConfigHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	cfgs, err := db.GetAllHy2Configs()
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if len(cfgs) == 0 {
+		c.JSON(404, gin.H{"success": false, "error": "未找到hy2配置"})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "data": cfgs[0]}) // 假设只有一个hy2配置
+}
+
+// 更新hy2配置
+func updateHy2ConfigHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	var cfg database.Hy2Config
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "参数错误: " + err.Error()})
+		return
+	}
+	err := db.UpdateHy2Config(&cfg)
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "message": "保存成功"})
+}
+
+// 删除单条
+func deleteHy2ConfigHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "参数错误: id无效"})
+		return
+	}
+	err = db.DeleteHy2Config(id)
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "message": "删除成功"})
+}
+
+// 获取全部hy2配置
+func getAllHy2ConfigsHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	cfgs, err := db.GetAllHy2Configs()
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "data": cfgs})
+}
+
+func isValidHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	// 简单IP或域名校验
+	ipRe := regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}$`)
+	domainRe := regexp.MustCompile(`^([a-zA-Z0-9\-]+\.)+[a-zA-Z]{2,}$`)
+	return ipRe.MatchString(host) || domainRe.MatchString(host)
+}
+
+func isValidPort(port string) bool {
+	p, err := strconv.Atoi(port)
+	return err == nil && p > 0 && p <= 65535
+}
+
+func isValidURL(url string) bool {
+	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
+}
+
+// 批量保存（全量覆盖）
+func saveAllHy2ConfigsHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	var cfgs []database.Hy2Config
+	if err := c.ShouldBindJSON(&cfgs); err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "参数错误: " + err.Error()})
+		return
+	}
+	// 校验
+	if len(cfgs) > 0 {
+		// 统一目标地址
+		targetURL := cfgs[0].TargetAPIURL
+		if !isValidURL(targetURL) {
+			c.JSON(400, gin.H{"success": false, "error": "目标API地址无效，必须以http://或https://开头"})
+			return
+		}
+		for i, cfg := range cfgs {
+			if !isValidHost(cfg.SourceAPIHost) {
+				c.JSON(400, gin.H{"success": false, "error": "第" + strconv.Itoa(i+1) + "行：hy2服务端IP/域名无效"})
+				return
+			}
+			if !isValidPort(cfg.SourceAPIPort) {
+				c.JSON(400, gin.H{"success": false, "error": "第" + strconv.Itoa(i+1) + "行：hy2服务端端口无效"})
+				return
+			}
+			if strings.TrimSpace(cfg.SourceAPIPassword) == "" {
+				c.JSON(400, gin.H{"success": false, "error": "第" + strconv.Itoa(i+1) + "行：hy2服务端密码不能为空"})
+				return
+			}
+			if cfg.TargetAPIURL != targetURL {
+				c.JSON(400, gin.H{"success": false, "error": "所有配置的目标API地址必须一致"})
+				return
+			}
+		}
+	}
+	// 先清空表再插入
+	_, err := db.GetRawDB().Exec("DELETE FROM hy2_config")
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	for _, cfg := range cfgs {
+		db.AddHy2Config(&cfg)
+	}
+	c.JSON(200, gin.H{"success": true, "message": "保存成功"})
+}
+
+// 新增单条
+func addHy2ConfigHandler(c *gin.Context) {
+	if db == nil {
+		c.JSON(500, gin.H{"success": false, "error": "数据库未初始化"})
+		return
+	}
+	var cfg database.Hy2Config
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "参数错误: " + err.Error()})
+		return
+	}
+	err := db.AddHy2Config(&cfg)
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"success": true, "message": "添加成功"})
+}
+
+// hy2流量同步定时任务（自动执行，支持多配置）
+func startHy2SyncTask() {
+	for {
+		if db == nil {
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		cfgs, err := db.GetAllHy2Configs()
+		if err != nil {
+			logger.Errorf("读取hy2配置失败: %v", err)
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		// 如果没有配置，跳过本次执行
+		if len(cfgs) == 0 {
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		// 从第一个配置中获取目标地址，所有配置共享同一个目标
+		targetURL := cfgs[0].TargetAPIURL
+		if targetURL == "" {
+			logger.Warnf("[HY2] 目标地址为空，跳过本次同步")
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		// 为每个配置执行同步，但都发送到同一个目标地址
+		for _, cfg := range cfgs {
+			// 跳过无效配置
+			if cfg.SourceAPIHost == "" || cfg.SourceAPIPort == "" || cfg.SourceAPIPassword == "" {
+				continue
+			}
+
+			// 创建配置副本，使用统一的目标地址
+			syncCfg := database.Hy2Config{
+				ID:                cfg.ID,
+				SourceAPIPassword: cfg.SourceAPIPassword,
+				SourceAPIHost:     cfg.SourceAPIHost,
+				SourceAPIPort:     cfg.SourceAPIPort,
+				TargetAPIURL:      targetURL, // 使用统一的目标地址
+			}
+
+			go hy2SyncOnce(&syncCfg)
+		}
+		time.Sleep(10 * time.Second)
+	}
+}
+
+// hy2流量同步单次执行逻辑
+func hy2SyncOnce(cfg *database.Hy2Config) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	// 构建源API URL
+	sourceURL := "http://" + cfg.SourceAPIHost + ":" + cfg.SourceAPIPort + "/traffic?clear=1"
+	// 1. 拉取源API流量
+	req, err := http.NewRequest("GET", sourceURL, nil)
+	if err != nil {
+		logger.Errorf("[HY2] 创建请求失败: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", cfg.SourceAPIPassword)
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.Errorf("[HY2] 请求源API失败: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		logger.Errorf("[HY2] 源API返回状态码: %d, 响应: %s", resp.StatusCode, string(body))
+		return
+	}
+	var raw struct {
+		User struct {
+			Tx int64 `json:"tx"`
+			Rx int64 `json:"rx"`
+		} `json:"user"`
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.Errorf("[HY2] 读取源API响应失败: %v", err)
+		return
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		logger.Errorf("[HY2] 解析源API响应失败: %v", err)
+		return
+	}
+	logger.Infof("[HY2] 获取到流量数据: tx=%d, rx=%d", raw.User.Tx, raw.User.Rx)
+	// 2. 转换格式
+	postData := map[string]interface{}{
+		"inboundTraffics": []map[string]interface{}{
+			{
+				"IsInbound":  true,
+				"IsOutbound": false,
+				"Tag":        "hysteria2",
+				"Up":         raw.User.Tx,
+				"Down":       raw.User.Rx,
+			},
+		},
+	}
+	jsonBytes, _ := json.Marshal(postData)
+	// 3. POST到目标API
+	postReq, err := http.NewRequest("POST", cfg.TargetAPIURL, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		logger.Errorf("[HY2] 创建POST请求失败: %v", err)
+		return
+	}
+	postReq.Header.Set("Content-Type", "application/json")
+	// 新增：带上真实IP
+	postReq.Header.Set("X-Real-Ip", cfg.SourceAPIHost)
+	postResp, err := client.Do(postReq)
+	if err != nil {
+		logger.Errorf("[HY2] 发送POST到目标API失败: %v", err)
+		return
+	}
+	defer postResp.Body.Close()
+	if postResp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(postResp.Body)
+		logger.Errorf("[HY2] 目标API返回状态码: %d, 响应: %s", postResp.StatusCode, string(respBody))
+		return
+	}
+	logger.Infof("[HY2] 流量数据已成功推送到目标API")
+}
+
+--- 文件内容结束 (End of Content) ---
+
