@@ -40,6 +40,11 @@ jobs:
           npm ci
           npm run build
 
+      - name: 打包前端 dist 目录
+        run: |
+          cd web
+          zip -r ../dist.zip dist
+
       # 打包发布
       - name: 打包发布文件
         run: |
@@ -50,6 +55,8 @@ jobs:
       - name: 创建 Release 并上传资源
         uses: softprops/action-gh-release@v2
         with:
-          files: release/**
+          files: |
+            xtrafficdash
+            dist.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
