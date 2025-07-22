@@ -55,14 +55,15 @@
         <div class="traffic-table">
           <div class="table-title">入站今日流量</div>
           <div 
-            v-for="inbound in selectedService.inbound_traffics" 
+            v-for="inbound in sortedInbounds" 
             :key="inbound.id" 
             class="table-row"
+            @click="viewPortDetail(selectedService.id, inbound.tag)"
+            style="cursor:pointer;"
           >
             <div class="table-label-container">
               <div 
-                class="table-label clickable" 
-                @click="viewPortDetail(selectedService.id, inbound.tag)"
+                class="table-label"
               >
                 <span class="display-name">
                   {{ inbound.custom_name || inbound.tag }}
@@ -92,14 +93,15 @@
         <div class="traffic-table">
           <div class="table-title">用户今日流量</div>
           <div 
-            v-for="client in selectedService.client_traffics" 
+            v-for="client in sortedClients" 
             :key="client.id" 
             class="table-row"
+            @click="viewUserDetail(selectedService.id, client.email)"
+            style="cursor:pointer;"
           >
             <div class="table-label-container">
               <div 
-                class="table-label clickable" 
-                @click="viewUserDetail(selectedService.id, client.email)"
+                class="table-label"
               >
                 <span class="display-name">
                   {{ client.custom_name || client.email }}
@@ -170,7 +172,7 @@
 import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
-import { formatBytes } from '../utils/formatters'
+import { formatBytes as rawFormatBytes } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
 import EditNameModal from '../components/EditNameModal.vue'
@@ -469,6 +471,29 @@ const viewUserDetail = (serviceId, email) => {
   router.push(`/user/${serviceId}/${email}`)
 }
 
+// 保留4位有效数字的格式化函数
+function formatBytes(num) {
+  if (typeof num !== 'number' || isNaN(num)) return '-';
+  if (num >= 1024 * 1024 * 1024) {
+    return (num / (1024 * 1024 * 1024)).toPrecision(4) + ' GB';
+  } else if (num >= 1024 * 1024) {
+    return (num / (1024 * 1024)).toPrecision(4) + ' MB';
+  } else if (num >= 1024) {
+    return (num / 1024).toPrecision(4) + ' KB';
+  } else {
+    return num + ' B';
+  }
+}
+
+const sortedInbounds = computed(() => {
+  if (!selectedService.value || !Array.isArray(selectedService.value.inbound_traffics)) return [];
+  return [...selectedService.value.inbound_traffics].sort((a, b) => b.down - a.down);
+});
+const sortedClients = computed(() => {
+  if (!selectedService.value || !Array.isArray(selectedService.value.client_traffics)) return [];
+  return [...selectedService.value.client_traffics].sort((a, b) => b.down - a.down);
+});
+
 onMounted(async () => {
   const serviceId = parseInt(route.params.serviceId)
   
@@ -640,5 +665,11 @@ onUnmounted(() => {
 
 .table-row {
   border-left: 3px solid #70A1FF;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 24px;
 }
 </style> 

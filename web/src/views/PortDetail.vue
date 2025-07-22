@@ -173,7 +173,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
-import { formatBytes, formatDate, formatSmartTime } from '../utils/formatters'
+import { formatBytes as rawFormatBytes, formatDate, formatSmartTime } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
 import EditNameModal from '../components/EditNameModal.vue'
@@ -471,6 +471,19 @@ const downloadHistoryData = async () => {
   } catch (error) {
     console.error('下载历史数据失败:', error)
     alert('下载失败: ' + (error.response?.data?.error || error.message))
+  }
+}
+
+function formatBytes(num) {
+  if (typeof num !== 'number' || isNaN(num)) return '-';
+  if (num >= 1024 * 1024 * 1024) {
+    return (num / (1024 * 1024 * 1024)).toPrecision(5) + ' GB';
+  } else if (num >= 1024 * 1024) {
+    return (num / (1024 * 1024)).toPrecision(5) + ' MB';
+  } else if (num >= 1024) {
+    return (num / 1024).toPrecision(5) + ' KB';
+  } else {
+    return num + ' B';
   }
 }
 
@@ -857,5 +870,11 @@ onUnmounted(() => {
 }
 .section-title {
   color: #222;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 24px;
 }
 </style> 
