@@ -144,7 +144,7 @@ docker start xtrafficdash
 ## 🏗️ 项目结构
 
 ```
-x-ui-panel/
+xtrafficdash/
 │
 ├── backend/ # Go 后端服务
 │ ├── main.go # 后端主入口，静态文件服务

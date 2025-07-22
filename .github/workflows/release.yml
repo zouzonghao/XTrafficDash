@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: 检出代码
@@ -46,11 +46,11 @@ jobs:
           zip -r ../dist.zip dist
 
       # 打包发布
-      - name: 打包发布文件
-        run: |
-          mkdir release
-          cp backend/x-ui-backend release/
-          cp -r web/dist release/web-dist
+      # - name: 打包发布文件
+      #   run: |
+      #     mkdir release
+      #     cp xtrafficdash release/
+      #     cp -r web/dist release/web-dist
 
       - name: 创建 Release 并上传资源
         uses: softprops/action-gh-release@v2
