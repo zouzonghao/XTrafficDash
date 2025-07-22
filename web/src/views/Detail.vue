@@ -6,11 +6,11 @@
 
     <div class="header">
       <h1>
-        {{ selectedService?.custom_name || selectedService?.ip_address }}
+        {{ selectedService?.custom_name || selectedService?.ip }}
         <button 
           class="edit-icon" 
           @click="startEditServiceName"
-          title="编辑服务名称"
+          title="编辑节点名称"
         >
           ✏️
         </button>
@@ -133,13 +133,13 @@
     </div>
   </div>
   
-  <!-- 编辑服务名称弹窗 -->
+  <!-- 编辑节点名称弹窗 -->
   <EditNameModal
     v-model:visible="showServiceModal"
     :value="currentEditingValue"
-    title="编辑服务名称"
-    label="服务名称"
-    placeholder="请输入服务名称"
+    title="编辑节点名称"
+    label="节点名称"
+    placeholder="请输入节点名称"
     @save="saveServiceName"
     @close="closeServiceModal"
   />
@@ -270,9 +270,9 @@ const closeClientModal = () => {
   currentEditingClient.value = null
 }
 
-// 编辑服务名称
+// 编辑节点名称
 const startEditServiceName = () => {
-  currentEditingValue.value = selectedService.value?.custom_name || selectedService.value?.ip_address
+  currentEditingValue.value = selectedService.value?.custom_name || selectedService.value?.ip
   showServiceModal.value = true
 }
 
@@ -286,7 +286,7 @@ const saveServiceName = async (newName) => {
       alert('保存失败: ' + response.data.error)
     }
   } catch (error) {
-    console.error('保存服务名称失败:', error)
+    console.error('保存节点名称失败:', error)
     alert('保存失败: ' + error.message)
   }
 }

@@ -74,11 +74,16 @@ import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
 import EditNameModal from './EditNameModal.vue'
 import { useServicesStore } from '../stores/services'
+import { watch } from 'vue'
 
 const props = defineProps({
   service: {
     type: Object,
     required: true
+  },
+  trafficData: {
+    type: Object,
+    required: false
   }
 })
 
@@ -92,12 +97,12 @@ const currentEditingValue = ref('')
 
 // 计算显示名称
 const displayName = computed(() => {
-  return props.service.custom_name || props.service.ip_address
+  return props.service.custom_name || props.service.ip
 })
 
 // 打开编辑弹窗
 const openEditModal = () => {
-  currentEditingValue.value = props.service.custom_name || props.service.ip_address
+  currentEditingValue.value = props.service.custom_name || props.service.ip
   showEditModal.value = true
 }
 
@@ -128,98 +133,97 @@ const closeModal = () => {
   showEditModal.value = false
 }
 
-const createChart = async () => {
-  try {
-    const response = await servicesAPI.getWeeklyTraffic(props.service.id)
-    if (response.data.success) {
-      const data = response.data.data
-      const ctx = document.getElementById(`chart-${props.service.id}`)
-      
-      if (ctx) {
-        chart = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: data.dates,
-            datasets: [
-              {
-                label: '上传',
-                data: data.upload_data,
-                borderColor: '#74b9ff',
-                backgroundColor: 'rgba(116, 185, 255, 0.1)',
-                tension: 0.4,
-                fill: true
-              },
-              {
-                label: '下载',
-                data: data.download_data,
-                borderColor: '#00b894',
-                backgroundColor: 'rgba(0, 184, 148, 0.1)',
-                tension: 0.4,
-                fill: true
-              }
-            ]
+const createChart = () => {
+  if (!props.trafficData) return
+  const ctx = document.getElementById(`chart-${props.service.id}`)
+  if (ctx) {
+    if (chart) {
+      chart.destroy()
+    }
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: props.trafficData.dates,
+        datasets: [
+          {
+            label: '上传',
+            data: props.trafficData.upload_data,
+            borderColor: '#74b9ff',
+            backgroundColor: 'rgba(116, 185, 255, 0.1)',
+            tension: 0.4,
+            fill: true
           },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: false
+          {
+            label: '下载',
+            data: props.trafficData.download_data,
+            borderColor: '#00b894',
+            backgroundColor: 'rgba(0, 184, 148, 0.1)',
+            tension: 0.4,
+            fill: true
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          x: {
+            display: true,
+            ticks: {
+              color: '#2c3e50',
+              font: {
+                size: 10
               }
             },
-            scales: {
-              x: {
-                display: true,
-                ticks: {
-                  color: '#2c3e50',
-                  font: {
-                    size: 10
-                  }
-                },
-                grid: {
-                  color: 'rgba(44, 62, 80, 0.1)'
-                }
+            grid: {
+              color: 'rgba(44, 62, 80, 0.1)'
+            }
+          },
+          y: {
+            display: true,
+            ticks: {
+              color: '#2c3e50',
+              font: {
+                size: 10
               },
-              y: {
-                display: true,
-                ticks: {
-                  color: '#2c3e50',
-                  font: {
-                    size: 10
-                  },
-                  callback: function(value, index, values) {
-                    if (value >= 1024 * 1024 * 1024) {
-                      return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-                    } else if (value >= 1024 * 1024) {
-                      return (value / (1024 * 1024)).toFixed(1) + ' MB';
-                    } else if (value >= 1024) {
-                      return (value / 1024).toFixed(1) + ' KB';
-                    } else {
-                      return value + ' B';
-                    }
-                  }
-                },
-                grid: {
-                  color: 'rgba(44, 62, 80, 0.1)'
+              callback: function(value, index, values) {
+                if (value >= 1024 * 1024 * 1024) {
+                  return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+                } else if (value >= 1024 * 1024) {
+                  return (value / (1024 * 1024)).toFixed(1) + ' MB';
+                } else if (value >= 1024) {
+                  return (value / 1024).toFixed(1) + ' KB';
+                } else {
+                  return value + ' B';
                 }
               }
             },
-            elements: {
-              point: {
-                radius: 0
-              }
+            grid: {
+              color: 'rgba(44, 62, 80, 0.1)'
             }
           }
-        })
+        },
+        elements: {
+          point: {
+            radius: 0
+          }
+        }
       }
-    }
-  } catch (error) {
-    console.error('创建图表失败:', error)
+    })
   }
 }
 
+watch(() => props.trafficData, () => {
+  createChart()
+})
+
 onMounted(() => {
-  setTimeout(createChart, 100)
+  createChart()
 })
 
 onUnmounted(() => {

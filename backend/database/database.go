@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"regexp"
@@ -48,12 +47,11 @@ type InboundTraffic struct {
 
 // 服务信息结构体
 type Service struct {
-	ID          int       `json:"id"`
-	IPAddress   string    `json:"ip_address"`
-	ServiceName string    `json:"service_name"`
-	FirstSeen   time.Time `json:"first_seen"`
-	LastSeen    time.Time `json:"last_seen"`
-	Status      string    `json:"status"`
+	ID        int       `json:"id"`
+	IPAddress string    `json:"ip_address"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	Status    string    `json:"status"`
 }
 
 // 入站流量记录结构体
@@ -154,13 +152,10 @@ func initDatabase(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS services (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		ip_address TEXT NOT NULL UNIQUE,
-		service_name TEXT,
 		custom_name TEXT,
 		first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		status TEXT DEFAULT 'active',
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		status TEXT DEFAULT 'active'
 	);
 
 	-- 2. 入站流量表 - 记录每个入站端口的流量数据
@@ -170,14 +165,8 @@ func initDatabase(db *sql.DB) error {
 		tag TEXT NOT NULL,
 		port INTEGER,
 		custom_name TEXT,
-		up BIGINT DEFAULT 0,
-		down BIGINT DEFAULT 0,
 		last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		status TEXT DEFAULT 'active',
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
-		UNIQUE(service_id, tag)
+		status TEXT DEFAULT 'active'
 	);
 
 	-- 3. 客户端流量表 - 记录每个用户的流量数据
@@ -186,14 +175,8 @@ func initDatabase(db *sql.DB) error {
 		service_id INTEGER NOT NULL,
 		email TEXT NOT NULL,
 		custom_name TEXT,
-		up BIGINT DEFAULT 0,
-		down BIGINT DEFAULT 0,
 		last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		status TEXT DEFAULT 'active',
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
-		UNIQUE(service_id, email)
+		status TEXT DEFAULT 'active'
 	);
 
 	-- 4. 入站流量历史记录表 - 每日流量统计
@@ -226,28 +209,15 @@ func initDatabase(db *sql.DB) error {
 		UNIQUE(client_traffic_id, date)
 	);
 
-	-- 6. 原始请求记录表 - 记录所有接收到的原始数据
-	CREATE TABLE IF NOT EXISTS raw_requests (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		service_id INTEGER NOT NULL,
-		client_ip TEXT NOT NULL,
-		user_agent TEXT,
-		request_body TEXT,
-		parsed_data TEXT,
-		received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		processed BOOLEAN DEFAULT FALSE,
-		FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
-	);
-
-	-- 7. HY2配置表
+	-- 6. HY2配置表
 	CREATE TABLE IF NOT EXISTS hy2_config (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		source_api_password TEXT NOT NULL DEFAULT 'admin',
+		source_api_password TEXT NOT NULL DEFAULT '',
 		source_api_host TEXT NOT NULL DEFAULT '',
 		source_api_port TEXT NOT NULL DEFAULT '',
 		target_api_url TEXT NOT NULL DEFAULT ''
 	);
-	-- 移除默认插入，避免无效配置
+
 
 	-- 创建索引
 	CREATE INDEX IF NOT EXISTS idx_services_ip ON services(ip_address);
@@ -255,7 +225,6 @@ func initDatabase(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_client_traffics_service_email ON client_traffics(service_id, email);
 	CREATE INDEX IF NOT EXISTS idx_inbound_history_date ON inbound_traffic_history(date);
 	CREATE INDEX IF NOT EXISTS idx_client_history_date ON client_traffic_history(date);
-	CREATE INDEX IF NOT EXISTS idx_raw_requests_service_time ON raw_requests(service_id, received_at);
 	`
 
 	// 执行SQL语句
@@ -278,26 +247,19 @@ func (d *Database) ProcessTrafficData(clientIP string, userAgent string, request
 		return fmt.Errorf("获取或创建服务失败: %v", err)
 	}
 
-	// 2. 记录原始请求
-	parsedData, _ := json.Marshal(trafficData)
-	err = d.recordRawRequest(tx, serviceID, clientIP, userAgent, requestBody, string(parsedData))
-	if err != nil {
-		return fmt.Errorf("记录原始请求失败: %v", err)
-	}
-
-	// 3. 处理入站流量数据并记录有流量的端口
+	// 2. 处理入站流量数据并记录有流量的端口
 	err = d.processInboundTraffics(tx, serviceID, trafficData.InboundTraffics)
 	if err != nil {
 		return fmt.Errorf("处理入站流量失败: %v", err)
 	}
 
-	// 4. 处理客户端流量数据
+	// 3. 处理客户端流量数据
 	err = d.processClientTraffics(tx, serviceID, trafficData.ClientTraffics)
 	if err != nil {
 		return fmt.Errorf("处理客户端流量失败: %v", err)
 	}
 
-	// 5. 只要有数据包发来就更新节点最后活跃时间（包括心跳数据）
+	// 4. 只要有数据包发来就更新节点最后活跃时间（包括心跳数据）
 	err = d.updateServiceLastSeen(tx, serviceID)
 	if err != nil {
 		return fmt.Errorf("更新服务最后活跃时间失败: %v", err)
@@ -314,15 +276,14 @@ func (d *Database) getOrCreateService(tx *sql.Tx, ipAddress string) (int, error)
 	// 先尝试查找现有服务
 	err := tx.QueryRow("SELECT id FROM services WHERE ip_address = ?", ipAddress).Scan(&serviceID)
 	if err == sql.ErrNoRows {
-		// 创建新服务
+		now := time.Now()
 		result, err := tx.Exec(`
-			INSERT INTO services (ip_address, service_name, first_seen, last_seen, status)
-			VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'active')
-		`, ipAddress, fmt.Sprintf("XTrafficDash-Service-%s", ipAddress))
+			INSERT INTO services (ip_address, custom_name, first_seen, last_seen, status)
+			VALUES (?, ?, ?, ?, 'active')
+		`, ipAddress, "", now, now)
 		if err != nil {
 			return 0, err
 		}
-
 		serviceID64, err := result.LastInsertId()
 		if err != nil {
 			return 0, err
@@ -333,15 +294,6 @@ func (d *Database) getOrCreateService(tx *sql.Tx, ipAddress string) (int, error)
 	}
 
 	return serviceID, nil
-}
-
-// 记录原始请求
-func (d *Database) recordRawRequest(tx *sql.Tx, serviceID int, clientIP, userAgent, requestBody, parsedData string) error {
-	_, err := tx.Exec(`
-		INSERT INTO raw_requests (service_id, client_ip, user_agent, request_body, parsed_data, received_at, processed)
-		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE)
-	`, serviceID, clientIP, userAgent, requestBody, parsedData)
-	return err
 }
 
 // 处理入站流量数据
@@ -359,7 +311,8 @@ func (d *Database) processInboundTraffics(tx *sql.Tx, serviceID int, inboundTraf
 		var recordID int
 		err := tx.QueryRow(`SELECT id FROM inbound_traffics WHERE service_id = ? AND tag = ?`, serviceID, traffic.Tag).Scan(&recordID)
 		if err == sql.ErrNoRows {
-			result, err := tx.Exec(`INSERT INTO inbound_traffics (service_id, tag, port, last_updated, status) VALUES (?, ?, ?, CURRENT_TIMESTAMP, 'active')`, serviceID, traffic.Tag, port)
+			now := time.Now()
+			result, err := tx.Exec(`INSERT INTO inbound_traffics (service_id, tag, port, last_updated, status) VALUES (?, ?, ?, ?, 'active')`, serviceID, traffic.Tag, port, now)
 			if err != nil {
 				return err
 			}
@@ -372,11 +325,16 @@ func (d *Database) processInboundTraffics(tx *sql.Tx, serviceID int, inboundTraf
 		if traffic.Up > 0 || traffic.Down > 0 {
 			_, err := tx.Exec(`
 				INSERT INTO inbound_traffic_history (inbound_traffic_id, service_id, tag, date, daily_up, daily_down, created_at)
-				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
+				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, ?)
 				ON CONFLICT(inbound_traffic_id, date) DO UPDATE SET
 					daily_up = daily_up + excluded.daily_up,
 					daily_down = daily_down + excluded.daily_down
-			`, recordID, serviceID, traffic.Tag, traffic.Up, traffic.Down)
+			`, recordID, serviceID, traffic.Tag, traffic.Up, traffic.Down, time.Now())
+			if err != nil {
+				return err
+			}
+			// 新增：有流量时更新 last_updated
+			_, err = tx.Exec(`UPDATE inbound_traffics SET last_updated = ? WHERE id = ?`, time.Now(), recordID)
 			if err != nil {
 				return err
 			}
@@ -394,7 +352,8 @@ func (d *Database) processClientTraffics(tx *sql.Tx, serviceID int, clientTraffi
 		var recordID int
 		err := tx.QueryRow(`SELECT id FROM client_traffics WHERE service_id = ? AND email = ?`, serviceID, traffic.Email).Scan(&recordID)
 		if err == sql.ErrNoRows {
-			result, err := tx.Exec(`INSERT INTO client_traffics (service_id, email, last_updated, status) VALUES (?, ?, CURRENT_TIMESTAMP, 'active')`, serviceID, traffic.Email)
+			now := time.Now()
+			result, err := tx.Exec(`INSERT INTO client_traffics (service_id, email, last_updated, status) VALUES (?, ?, ?, 'active')`, serviceID, traffic.Email, now)
 			if err != nil {
 				return err
 			}
@@ -407,11 +366,16 @@ func (d *Database) processClientTraffics(tx *sql.Tx, serviceID int, clientTraffi
 		if traffic.Up > 0 || traffic.Down > 0 {
 			_, err := tx.Exec(`
 				INSERT INTO client_traffic_history (client_traffic_id, service_id, email, date, daily_up, daily_down, created_at)
-				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
+				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, ?)
 				ON CONFLICT(client_traffic_id, date) DO UPDATE SET
 					daily_up = daily_up + excluded.daily_up,
 					daily_down = daily_down + excluded.daily_down
-			`, recordID, serviceID, traffic.Email, traffic.Up, traffic.Down)
+			`, recordID, serviceID, traffic.Email, traffic.Up, traffic.Down, time.Now())
+			if err != nil {
+				return err
+			}
+			// 新增：有流量时更新 last_updated
+			_, err = tx.Exec(`UPDATE client_traffics SET last_updated = ? WHERE id = ?`, time.Now(), recordID)
 			if err != nil {
 				return err
 			}
@@ -422,11 +386,12 @@ func (d *Database) processClientTraffics(tx *sql.Tx, serviceID int, clientTraffi
 
 // 更新服务最后活跃时间
 func (d *Database) updateServiceLastSeen(tx *sql.Tx, serviceID int) error {
+	now := time.Now()
 	_, err := tx.Exec(`
 		UPDATE services 
-		SET last_seen = CURRENT_TIMESTAMP 
+		SET last_seen = ? 
 		WHERE id = ?
-	`, serviceID)
+	`, now, serviceID)
 	return err
 }
 
@@ -463,7 +428,6 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 		SELECT 
 			s.id,
 			s.ip_address,
-			s.service_name,
 			s.custom_name,
 			s.last_seen,
 			CASE 
@@ -484,18 +448,17 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 	// 处理服务基本信息
 	for serviceRows.Next() {
 		var id int
-		var ipAddress, serviceName, lastSeen, status string
+		var ipAddress, lastSeen, status string
 		var customName sql.NullString
 
-		scanErr := serviceRows.Scan(&id, &ipAddress, &serviceName, &customName, &lastSeen, &status)
+		scanErr := serviceRows.Scan(&id, &ipAddress, &customName, &lastSeen, &status)
 		if scanErr != nil {
 			return nil, scanErr
 		}
 
 		result := map[string]interface{}{
 			"id":                 id,
-			"ip_address":         ipAddress,
-			"service_name":       serviceName,
+			"ip":                 ipAddress,
 			"custom_name":        customName.String,
 			"last_seen":          lastSeen,
 			"status":             status,
@@ -580,9 +543,9 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 	var rawIPAddress string
 	var customName sql.NullString
 	err := d.db.QueryRow(`
-		SELECT id, ip_address, service_name, custom_name, first_seen, last_seen, status
+		SELECT id, ip_address, custom_name, first_seen, last_seen, status
 		FROM services WHERE id = ?
-	`, serviceID).Scan(&service.ID, &rawIPAddress, &service.ServiceName, &customName,
+	`, serviceID).Scan(&service.ID, &rawIPAddress, &customName,
 		&service.FirstSeen, &service.LastSeen, &service.Status)
 	if err != nil {
 		return nil, err
@@ -678,12 +641,6 @@ func (d *Database) DeleteService(serviceID int) error {
 		return fmt.Errorf("删除客户端流量记录失败: %v", err)
 	}
 
-	// 删除原始请求记录
-	_, err = tx.Exec("DELETE FROM raw_requests WHERE service_id = ?", serviceID)
-	if err != nil {
-		return fmt.Errorf("删除原始请求记录失败: %v", err)
-	}
-
 	// 删除服务记录
 	_, err = tx.Exec("DELETE FROM services WHERE id = ?", serviceID)
 	if err != nil {
@@ -692,6 +649,52 @@ func (d *Database) DeleteService(serviceID int) error {
 
 	log.Printf("服务ID %d 删除成功", serviceID)
 	return tx.Commit()
+}
+
+// 通用：处理每日流量统计
+func (d *Database) processDailyTraffic(tx *sql.Tx, table string, historyTable string, idField string, extraField string) error {
+	var query string
+	if table == "inbound_traffics" {
+		query = `SELECT id, service_id, tag, up, down FROM inbound_traffics WHERE status = 'active'`
+	} else if table == "client_traffics" {
+		query = `SELECT id, service_id, email, up, down FROM client_traffics WHERE status = 'active'`
+	} else {
+		return fmt.Errorf("不支持的表: %s", table)
+	}
+	rows, err := tx.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, serviceID int
+		var extra string
+		var dailyUp, dailyDown int64
+		err := rows.Scan(&id, &serviceID, &extra, &dailyUp, &dailyDown)
+		if err != nil {
+			return err
+		}
+		if dailyUp > 0 || dailyDown > 0 {
+			var insertQuery string
+			if table == "inbound_traffics" {
+				insertQuery = `INSERT OR REPLACE INTO inbound_traffic_history (inbound_traffic_id, service_id, tag, date, daily_up, daily_down, created_at) VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)`
+				_, err = tx.Exec(insertQuery, id, serviceID, extra, dailyUp, dailyDown)
+			} else {
+				insertQuery = `INSERT OR REPLACE INTO client_traffic_history (client_traffic_id, service_id, email, date, daily_up, daily_down, created_at) VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)`
+				_, err = tx.Exec(insertQuery, id, serviceID, extra, dailyUp, dailyDown)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		// 清零今日流量
+		_, err = tx.Exec("UPDATE "+table+" SET up = 0, down = 0 WHERE id = ?", id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // 每日流量统计任务（需要在每日0点执行）
@@ -705,13 +708,13 @@ func (d *Database) DailyTrafficSummary() error {
 	defer tx.Rollback()
 
 	// 处理入站流量记录
-	err = d.processDailyInboundTraffic(tx)
+	err = d.processDailyTraffic(tx, "inbound_traffics", "inbound_traffic_history", "tag", "tag")
 	if err != nil {
 		return err
 	}
 
 	// 处理客户端流量记录
-	err = d.processDailyClientTraffic(tx)
+	err = d.processDailyTraffic(tx, "client_traffics", "client_traffic_history", "email", "email")
 	if err != nil {
 		return err
 	}
@@ -720,118 +723,12 @@ func (d *Database) DailyTrafficSummary() error {
 	return tx.Commit()
 }
 
-// 处理入站流量的每日统计
-func (d *Database) processDailyInboundTraffic(tx *sql.Tx) error {
-	// 获取所有活跃的入站流量记录
-	rows, err := tx.Query(`
-		SELECT id, service_id, tag, up, down
-		FROM inbound_traffics 
-		WHERE status = 'active'
-	`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id, serviceID int
-		var tag string
-		var dailyUp, dailyDown int64
-
-		err := rows.Scan(&id, &serviceID, &tag, &dailyUp, &dailyDown)
-		if err != nil {
-			return err
-		}
-
-		// 如果今日有流量，记录到历史表
-		if dailyUp > 0 || dailyDown > 0 {
-			_, err = tx.Exec(`
-				INSERT OR REPLACE INTO inbound_traffic_history 
-				(inbound_traffic_id, service_id, tag, date, daily_up, daily_down, created_at)
-				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
-			`, id, serviceID, tag, dailyUp, dailyDown)
-			if err != nil {
-				return err
-			}
-
-			log.Printf("端口 %s: 记录昨日流量 up=%d, down=%d", tag, dailyUp, dailyDown)
-		}
-
-		// 清零今日流量
-		_, err = tx.Exec(`
-			UPDATE inbound_traffics 
-			SET up = 0, down = 0
-			WHERE id = ?
-		`, id)
-		if err != nil {
-			return err
-		}
-
-		log.Printf("端口 %s: 清零今日流量", tag)
-	}
-
-	return nil
-}
-
-// 处理客户端流量的每日统计
-func (d *Database) processDailyClientTraffic(tx *sql.Tx) error {
-	// 获取所有活跃的客户端流量记录
-	rows, err := tx.Query(`
-		SELECT id, service_id, email, up, down
-		FROM client_traffics 
-		WHERE status = 'active'
-	`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id, serviceID int
-		var email string
-		var dailyUp, dailyDown int64
-
-		err := rows.Scan(&id, &serviceID, &email, &dailyUp, &dailyDown)
-		if err != nil {
-			return err
-		}
-
-		// 如果今日有流量，记录到历史表
-		if dailyUp > 0 || dailyDown > 0 {
-			_, err = tx.Exec(`
-				INSERT OR REPLACE INTO client_traffic_history 
-				(client_traffic_id, service_id, email, date, daily_up, daily_down, created_at)
-				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
-			`, id, serviceID, email, dailyUp, dailyDown)
-			if err != nil {
-				return err
-			}
-
-			log.Printf("用户 %s: 记录昨日流量 up=%d, down=%d", email, dailyUp, dailyDown)
-		}
-
-		// 清零今日流量
-		_, err = tx.Exec(`
-			UPDATE client_traffics 
-			SET up = 0, down = 0
-			WHERE id = ?
-		`, id)
-		if err != nil {
-			return err
-		}
-
-		log.Printf("用户 %s: 清零今日流量", email)
-	}
-
-	return nil
-}
-
 // 创建/更新hy2配置表（支持多条配置）
 func (d *Database) InitHy2ConfigTable() error {
 	sql := `
 	CREATE TABLE IF NOT EXISTS hy2_config (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		source_api_password TEXT NOT NULL DEFAULT 'admin',
+		source_api_password TEXT NOT NULL DEFAULT '',
 		source_api_host TEXT NOT NULL DEFAULT '',
 		source_api_port TEXT NOT NULL DEFAULT '',
 		target_api_url TEXT NOT NULL DEFAULT ''
@@ -880,7 +777,8 @@ func (d *Database) DeleteHy2Config(id int) error {
 	return err
 }
 
-// Database结构体方法：返回原始*sql.DB
-func (d *Database) GetRawDB() *sql.DB {
-	return d.db
+// 删除全部hy2配置
+func (d *Database) DeleteAllHy2Configs() error {
+	_, err := d.db.Exec("DELETE FROM hy2_config")
+	return err
 }

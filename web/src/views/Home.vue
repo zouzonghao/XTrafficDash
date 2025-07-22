@@ -24,6 +24,7 @@
         v-for="service in sortedServices"
         :key="service.id"
         :service="service"
+        :trafficData="trafficDataMap[service.id]"
         @select="handleSelectService"
         @delete="handleDeleteService"
       />
@@ -33,8 +34,8 @@
     <div v-if="showDeleteModal" class="modal-overlay" @click="hideDeleteConfirm">
       <div class="modal" @click.stop>
         <h3>确认删除</h3>
-        <p>您确定要删除服务 <strong>{{ serviceToDelete?.custom_name || serviceToDelete?.ip_address }}</strong> 吗？</p>
-        <p v-if="serviceToDelete?.custom_name" class="ip-info">IP：{{ serviceToDelete?.ip_address }}</p>
+        <p>您确定要删除服务 <strong>{{ serviceToDelete?.custom_name || serviceToDelete?.ip }}</strong> 吗？</p>
+        <p v-if="serviceToDelete?.custom_name" class="ip-info">IP：{{ serviceToDelete?.ip }}</p>
         <p class="warning-text">此操作将删除该服务的所有数据，包括流量记录和历史数据，且无法恢复。</p>
         <div class="modal-buttons">
           <button class="modal-button cancel" @click="hideDeleteConfirm">取消</button>
@@ -51,6 +52,7 @@ import { useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
 import { useAuthStore } from '../stores/auth'
 import ServiceCard from '../components/ServiceCard.vue'
+import { servicesAPI } from '../utils/api'
 
 const router = useRouter()
 const servicesStore = useServicesStore()
@@ -58,6 +60,7 @@ const authStore = useAuthStore()
 
 const showDeleteModal = ref(false)
 const serviceToDelete = ref(null)
+const trafficDataMap = ref({})
 
 const handleSelectService = (service) => {
   servicesStore.selectService(service)
@@ -94,6 +97,17 @@ const goHy2Setting = () => {
   router.push('/hy2-setting')
 }
 
+const loadAllTrafficData = async () => {
+  const map = {}
+  for (const service of servicesStore.services) {
+    const res = await servicesAPI.getWeeklyTraffic(service.id)
+    if (res.data.success) {
+      map[service.id] = res.data.data
+    }
+  }
+  trafficDataMap.value = map
+}
+
 // 排序后的服务列表
 const sortedServices = computed(() => {
   // 先拷贝一份，避免影响原数据
@@ -109,14 +123,15 @@ const sortedServices = computed(() => {
       return 1 // b有名，a没名，b排前
     } else {
       // 都没名，按ip排序
-      return a.ip_address.localeCompare(b.ip_address, 'zh-Hans-CN', { sensitivity: 'base' })
+      return a.ip.localeCompare(b.ip, 'zh-Hans-CN', { sensitivity: 'base' })
     }
   })
   return arr
 })
 
-onMounted(() => {
-  servicesStore.loadServices()
+onMounted(async () => {
+  await servicesStore.loadServices()
+  await loadAllTrafficData()
   servicesStore.startAutoRefresh()
 })
 

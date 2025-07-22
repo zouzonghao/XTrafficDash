@@ -14,7 +14,7 @@
 |--------|------|------|
 | id | INTEGER | 主键，自增 |
 | ip_address | TEXT | 服务IP地址（唯一） |
-| service_name | TEXT | 服务名称 |
+| service_name | TEXT | 节点名称 |
 | first_seen | TIMESTAMP | 首次发现时间 |
 | last_seen | TIMESTAMP | 最后活跃时间 |
 | status | TEXT | 服务状态（active/inactive） |

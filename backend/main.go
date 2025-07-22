@@ -457,7 +457,7 @@ func saveAllHy2ConfigsHandler(c *gin.Context) {
 		}
 	}
 	// 先清空表再插入
-	_, err := db.GetRawDB().Exec("DELETE FROM hy2_config")
+	err := db.DeleteAllHy2Configs()
 	if err != nil {
 		c.JSON(500, gin.H{"success": false, "error": err.Error()})
 		return
@@ -560,6 +560,7 @@ func hy2SyncOnce(cfg *database.Hy2Config) {
 		logger.Errorf("[HY2] 源API返回状态码: %d, 响应: %s", resp.StatusCode, string(body))
 		return
 	}
+
 	var raw struct {
 		User struct {
 			Tx int64 `json:"tx"`
@@ -576,6 +577,7 @@ func hy2SyncOnce(cfg *database.Hy2Config) {
 		return
 	}
 	logger.Infof("[HY2] 获取到流量数据: tx=%d, rx=%d", raw.User.Tx, raw.User.Rx)
+
 	// 2. 转换格式
 	postData := map[string]interface{}{
 		"inboundTraffics": []map[string]interface{}{
@@ -589,6 +591,7 @@ func hy2SyncOnce(cfg *database.Hy2Config) {
 		},
 	}
 	jsonBytes, _ := json.Marshal(postData)
+
 	// 3. POST到目标API
 	postReq, err := http.NewRequest("POST", cfg.TargetAPIURL, bytes.NewBuffer(jsonBytes))
 	if err != nil {

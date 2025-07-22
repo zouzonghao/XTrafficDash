@@ -30,7 +30,7 @@
         <div class="info-grid">
           <div class="info-item">
             <div class="info-label">服务IP</div>
-            <div class="info-value">{{ userDetail.user_info.ip_address }}</div>
+            <div class="info-value">{{ userDetail.user_info.ip }}</div>
           </div>
           <div class="info-item">
             <div class="info-label">所属端口</div>
@@ -51,7 +51,7 @@
           </div>
           <div class="info-item">
             <div class="info-label">最后活跃</div>
-            <div class="info-value">{{ formatDateTime(userDetail.user_info.last_seen) }}</div>
+            <div class="info-value">{{ formatSmartTime(userDetail.user_info.last_seen) }}</div>
           </div>
         </div>
       </div>
@@ -179,7 +179,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
-import { formatBytes, formatDate, formatDateTime } from '../utils/formatters'
+import { formatBytes, formatDate, formatSmartTime } from '../utils/formatters'
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
 import EditNameModal from '../components/EditNameModal.vue'

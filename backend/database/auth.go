@@ -1,7 +1,6 @@
 package database
 
 import (
-	"crypto/rand"
 	"net/http"
 	"os"
 	"time"
@@ -29,19 +28,21 @@ var jwtSecret []byte
 
 // 初始化JWT密钥
 func InitJWT() {
-	// 生成随机密钥
-	secret := make([]byte, 32)
-	rand.Read(secret)
-	jwtSecret = secret
+	// 从环境变量读取密钥
+	secret := os.Getenv("PASSWORD")
+	if secret == "" {
+		panic("必须设置环境变量 PASSWORD 作为 JWT 密钥和登录密码")
+	}
+	jwtSecret = []byte(secret)
 }
 
 // 验证密码
 func validatePassword(password string) bool {
 	// 从环境变量读取密码
-	envPassword := os.Getenv("X_UI_PASSWORD")
+	envPassword := os.Getenv("PASSWORD")
 	if envPassword == "" {
-		// 如果没有设置环境变量，使用默认密码
-		envPassword = "admin123"
+		// 未设置密码，直接返回 false
+		return false
 	}
 	return password == envPassword
 }
