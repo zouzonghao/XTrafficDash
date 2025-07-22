@@ -82,7 +82,7 @@ systemctl restart hysteria-server.service
 
 
 
-## 🚀 更新
+## 🚀 更新（数据库迁移）
 ```bash
 # 1. 停止正在运行的容器，防止数据库写入冲突
 docker stop xtrafficdash
