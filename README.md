@@ -117,7 +117,7 @@ docker run -d \
 docker stop xtrafficdash
 
 # 8. 将备份的数据库文件拷贝回新容器
-docker cp /usr/xtrafficdash/data xtrafficdash:/app/data
+docker cp /usr/xtrafficdash/data xtrafficdash:/app/
 
 # 9. 启动新容器，使用导入的数据库
 docker start xtrafficdash
