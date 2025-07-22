@@ -62,15 +62,15 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #F5F6FA;
   padding: 20px;
 }
 
 .login-card {
-  background: white;
-  border-radius: 15px;
+  background: #fff;
+  border-radius: 16px;
   padding: 40px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 24px rgba(44,62,80,0.10);
   width: 100%;
   max-width: 400px;
 }
@@ -81,7 +81,7 @@ const handleLogin = async () => {
 }
 
 .login-header h1 {
-  color: #2c3e50;
+  color: #222;
   font-size: 2rem;
   margin-bottom: 10px;
 }
@@ -119,7 +119,7 @@ const handleLogin = async () => {
 
 .form-group input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #70A1FF;
 }
 
 .form-group input:disabled {
@@ -137,20 +137,26 @@ const handleLogin = async () => {
 }
 
 .login-button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #70A1FF;
+  color: #fff;
   border: none;
-  padding: 14px 20px;
-  border-radius: 8px;
+  padding: 14px 12px;
+  border-radius: 20px;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
+  min-width: 200px;
+  display: block;
+  margin: 0 auto;
 }
 
 .login-button:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+  background: #1E90FF;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
 
 .login-button:disabled {
