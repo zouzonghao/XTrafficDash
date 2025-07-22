@@ -22,11 +22,11 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: 编译 Go 后端 (Linux amd64, 静态链接)
+      - name: 编译 Go 后端 (Linux amd64, 启用CGO)
         run: |
           cd backend
           go mod tidy
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o xtrafficdash
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o xtrafficdash
           mv xtrafficdash ../
 
       # 前端 Vue 构建
