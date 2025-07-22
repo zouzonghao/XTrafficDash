@@ -27,6 +27,7 @@ jobs:
           cd backend
           go mod tidy
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o xtrafficdash
+          mv xtrafficdash ../
 
       # 前端 Vue 构建
       - name: 设置 Node.js
