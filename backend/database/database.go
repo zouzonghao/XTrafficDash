@@ -423,9 +423,9 @@ func (d *Database) formatBytes(bytes int64) string {
 
 // 获取服务汇总信息
 func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
-	// 首先获取所有服务的基本信息
-	serviceRows, err := d.db.Query(`
-		SELECT 
+	// 一次性查询所有统计信息，避免N+1问题
+	rows, err := d.db.Query(`
+		SELECT
 			s.id,
 			s.ip_address,
 			s.custom_name,
@@ -433,106 +433,55 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 			CASE 
 				WHEN (strftime('%s', 'now') - strftime('%s', s.last_seen)) <= 30 THEN 'active'
 				ELSE 'inactive'
-			END as status
-		FROM services s
-		ORDER BY s.last_seen DESC
+			END as status,
+			COALESCE(it_counts.inbound_count, 0) as inbound_count,
+			COALESCE(ct_counts.client_count, 0) as client_count,
+			COALESCE(today_traffic.today_up, 0) as today_inbound_up,
+			COALESCE(today_traffic.today_down, 0) as today_inbound_down
+		FROM
+			services s
+		LEFT JOIN (
+			SELECT service_id, COUNT(id) as inbound_count FROM inbound_traffics WHERE status = 'active' GROUP BY service_id
+		) it_counts ON s.id = it_counts.service_id
+		LEFT JOIN (
+			SELECT service_id, COUNT(id) as client_count FROM client_traffics WHERE status = 'active' GROUP BY service_id
+		) ct_counts ON s.id = ct_counts.service_id
+		LEFT JOIN (
+			SELECT service_id, SUM(daily_up) as today_up, SUM(daily_down) as today_down FROM inbound_traffic_history WHERE date = DATE('now', 'localtime') GROUP BY service_id
+		) today_traffic ON s.id = today_traffic.service_id
+		ORDER BY
+			s.last_seen DESC;
 	`)
 	if err != nil {
 		return nil, err
 	}
-	defer serviceRows.Close()
+	defer rows.Close()
 
 	var results []map[string]interface{}
-	serviceMap := make(map[int]map[string]interface{})
-
-	// 处理服务基本信息
-	for serviceRows.Next() {
+	for rows.Next() {
 		var id int
 		var ipAddress, lastSeen, status string
 		var customName sql.NullString
+		var inboundCount, clientCount int
+		var todayInboundUp, todayInboundDown int64
 
-		scanErr := serviceRows.Scan(&id, &ipAddress, &customName, &lastSeen, &status)
-		if scanErr != nil {
-			return nil, scanErr
+		err := rows.Scan(&id, &ipAddress, &customName, &lastSeen, &status, &inboundCount, &clientCount, &todayInboundUp, &todayInboundDown)
+		if err != nil {
+			return nil, err
 		}
-
 		result := map[string]interface{}{
 			"id":                 id,
 			"ip":                 ipAddress,
 			"custom_name":        customName.String,
 			"last_seen":          lastSeen,
 			"status":             status,
-			"inbound_count":      0,
-			"client_count":       0,
-			"today_inbound_up":   0,
-			"today_inbound_down": 0,
+			"inbound_count":      inboundCount,
+			"client_count":       clientCount,
+			"today_inbound_up":   todayInboundUp,
+			"today_inbound_down": todayInboundDown,
 		}
-		serviceMap[id] = result
 		results = append(results, result)
 	}
-
-	// 查询今日入站流量（历史表）
-	todayRows, err := d.db.Query(`
-		SELECT service_id, SUM(daily_up) as today_up, SUM(daily_down) as today_down
-		FROM inbound_traffic_history
-		WHERE date = DATE('now', 'localtime')
-		GROUP BY service_id
-	`)
-	if err == nil {
-		defer todayRows.Close()
-		for todayRows.Next() {
-			var serviceID int
-			var todayUp, todayDown sql.NullInt64
-			err := todayRows.Scan(&serviceID, &todayUp, &todayDown)
-			if err == nil {
-				if service, exists := serviceMap[serviceID]; exists {
-					service["today_inbound_up"] = todayUp.Int64
-					service["today_inbound_down"] = todayDown.Int64
-				}
-			}
-		}
-	}
-
-	// 查询入站端口数量（基础表）
-	inboundCountRows, err := d.db.Query(`
-		SELECT service_id, COUNT(*) as inbound_count
-		FROM inbound_traffics
-		WHERE status = 'active'
-		GROUP BY service_id
-	`)
-	if err == nil {
-		defer inboundCountRows.Close()
-		for inboundCountRows.Next() {
-			var serviceID, count int
-			err := inboundCountRows.Scan(&serviceID, &count)
-			if err == nil {
-				if service, exists := serviceMap[serviceID]; exists {
-					service["inbound_count"] = count
-				}
-			}
-		}
-	}
-
-	// 查询用户数量（基础表）
-	clientCountRows, err := d.db.Query(`
-		SELECT service_id, COUNT(*) as client_count
-		FROM client_traffics
-		WHERE status = 'active'
-		GROUP BY service_id
-	`)
-	if err == nil {
-		defer clientCountRows.Close()
-		for clientCountRows.Next() {
-			var serviceID, count int
-			err := clientCountRows.Scan(&serviceID, &count)
-			if err == nil {
-				if service, exists := serviceMap[serviceID]; exists {
-					service["client_count"] = count
-				}
-			}
-		}
-	}
-
 	return results, nil
 }
 
@@ -551,6 +500,24 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 		return nil, err
 	}
 	service.IPAddress = rawIPAddress
+
+	// 批量查询所有入站端口的今日流量
+	inboundTrafficMap := make(map[int]struct{ Up, Down int64 })
+	inboundTrafficRows, err := d.db.Query(`
+		SELECT inbound_traffic_id, COALESCE(daily_up,0), COALESCE(daily_down,0)
+		FROM inbound_traffic_history
+		WHERE service_id = ? AND date = DATE('now', 'localtime')
+	`, serviceID)
+	if err == nil {
+		defer inboundTrafficRows.Close()
+		for inboundTrafficRows.Next() {
+			var inboundID int
+			var up, down int64
+			if err := inboundTrafficRows.Scan(&inboundID, &up, &down); err == nil {
+				inboundTrafficMap[inboundID] = struct{ Up, Down int64 }{up, down}
+			}
+		}
+	}
 
 	// 获取入站流量（基础信息）
 	inboundRows, err := d.db.Query(`
@@ -573,10 +540,33 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 			return nil, err
 		}
 		record.CustomName = customName.String
-		// 查询今日流量
-		dbRow := d.db.QueryRow(`SELECT COALESCE(daily_up,0), COALESCE(daily_down,0) FROM inbound_traffic_history WHERE inbound_traffic_id = ? AND date = DATE('now', 'localtime')`, record.ID)
-		dbRow.Scan(&record.Up, &record.Down)
+		// 从 map 获取今日流量
+		if v, ok := inboundTrafficMap[record.ID]; ok {
+			record.Up = v.Up
+			record.Down = v.Down
+		} else {
+			record.Up = 0
+			record.Down = 0
+		}
 		inboundTraffics = append(inboundTraffics, record)
+	}
+
+	// 批量查询所有客户端的今日流量
+	clientTrafficMap := make(map[int]struct{ Up, Down int64 })
+	clientTrafficRows, err := d.db.Query(`
+		SELECT client_traffic_id, COALESCE(daily_up,0), COALESCE(daily_down,0)
+		FROM client_traffic_history
+		WHERE service_id = ? AND date = DATE('now', 'localtime')
+	`, serviceID)
+	if err == nil {
+		defer clientTrafficRows.Close()
+		for clientTrafficRows.Next() {
+			var clientID int
+			var up, down int64
+			if err := clientTrafficRows.Scan(&clientID, &up, &down); err == nil {
+				clientTrafficMap[clientID] = struct{ Up, Down int64 }{up, down}
+			}
+		}
 	}
 
 	// 获取客户端流量（基础信息）
@@ -599,9 +589,14 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 			return nil, err
 		}
 		record.CustomName = customName.String
-		// 查询今日流量
-		dbRow := d.db.QueryRow(`SELECT COALESCE(daily_up,0), COALESCE(daily_down,0) FROM client_traffic_history WHERE client_traffic_id = ? AND date = DATE('now', 'localtime')`, record.ID)
-		dbRow.Scan(&record.Up, &record.Down)
+		// 从 map 获取今日流量
+		if v, ok := clientTrafficMap[record.ID]; ok {
+			record.Up = v.Up
+			record.Down = v.Down
+		} else {
+			record.Up = 0
+			record.Down = 0
+		}
 		clientTraffics = append(clientTraffics, record)
 	}
 

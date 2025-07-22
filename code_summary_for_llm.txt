@@ -1797,18 +1797,30 @@ export const formatDate = (dateString) => {
   return date.toLocaleDateString('zh-CN')
 }
 
-export function formatDateTime(dateStr) {
+// 智能时间格式化：根据时间差自动选择“刚刚”、“xx分钟前”、“xx小时前”、“xx天前”、“xx个月前”、“xx年前”或 yyyy-MM-dd HH:mm
+export function formatSmartTime(dateStr) {
   if (!dateStr) return ''
-  const date = new Date(dateStr)
+  let date
+  if (typeof dateStr === 'string') {
+    if (dateStr.includes('T') || dateStr.includes('Z')) {
+      date = new Date(dateStr)
+    } else {
+      date = new Date(dateStr.replace(' ', 'T'))
+    }
+  } else {
+    date = new Date(dateStr)
+  }
   const now = new Date()
   const diffMs = now - date
   const diffMin = Math.floor(diffMs / (1000 * 60))
   const diffHour = Math.floor(diffMs / (1000 * 60 * 60))
-  if (diffHour < 24) {
-    if (diffMin < 1) return '刚刚'
-    if (diffMin < 60) return `${diffMin}分钟前`
-    return `${diffHour}小时前`
-  }
+  const diffDay = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin}分钟前`
+  if (diffHour < 24) return `${diffHour}小时前`
+  if (diffDay < 30) return `${diffDay}天前`
+  if (diffDay < 365) return `${Math.floor(diffDay / 30)}个月前`
+  if (diffDay >= 365) return `${Math.floor(diffDay / 365)}年前`
   // 超过24小时，显示 yyyy-MM-dd HH:mm
   const y = date.getFullYear()
   const m = (date.getMonth() + 1).toString().padStart(2, '0')
@@ -1816,44 +1828,6 @@ export function formatDateTime(dateStr) {
   const hh = date.getHours().toString().padStart(2, '0')
   const mm = date.getMinutes().toString().padStart(2, '0')
   return `${y}-${m}-${d} ${hh}:${mm}`
-}
-
-export const formatTimeAgo = (dateString) => {
-  // 处理时区问题：确保时间字符串被正确解析为本地时间
-  let date
-  if (typeof dateString === 'string') {
-    // 如果时间字符串包含 'T' 或 'Z'，说明是ISO格式，需要特殊处理
-    if (dateString.includes('T') || dateString.includes('Z')) {
-      date = new Date(dateString)
-    } else {
-      // 对于SQLite的TIMESTAMP格式，直接解析
-      date = new Date(dateString.replace(' ', 'T'))
-    }
-  } else {
-    date = new Date(dateString)
-  }
-  
-  const now = new Date()
-  const diffInMs = now - date
-  const diffInMinutes = Math.floor(diffInMs / (1000 * 60))
-  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60))
-  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24))
-
-  if (diffInMinutes < 1) {
-    return '刚刚'
-  } else if (diffInMinutes < 60) {
-    return `${diffInMinutes}分钟前`
-  } else if (diffInHours < 24) {
-    return `${diffInHours}小时前`
-  } else if (diffInDays < 30) {
-    return `${diffInDays}天前`
-  } else if (diffInDays < 365) {
-    const months = Math.floor(diffInDays / 30)
-    return `${months}个月前`
-  } else {
-    const years = Math.floor(diffInDays / 365)
-    return `${years}年前`
-  }
 } 
 --- 文件内容结束 (End of Content) ---
 
@@ -2473,6 +2447,8 @@ export default router
 package database
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"net/http"
 	"os"
 	"time"
@@ -2498,10 +2474,22 @@ type Claims struct {
 
 var jwtSecret []byte
 
+// 生成带16位固定后缀的JWT密钥
+func getPasswordWithSuffix() string {
+	password := os.Getenv("PASSWORD")
+	if password == "" {
+		return ""
+	}
+	h := md5.New()
+	h.Write([]byte(password))
+	hash := hex.EncodeToString(h.Sum(nil))
+	return password + hash[:16]
+}
+
 // 初始化JWT密钥
 func InitJWT() {
-	// 从环境变量读取密钥
-	secret := os.Getenv("PASSWORD")
+	// 从环境变量读取密钥并加上16位固定后缀
+	secret := getPasswordWithSuffix()
 	if secret == "" {
 		panic("必须设置环境变量 PASSWORD 作为 JWT 密钥和登录密码")
 	}
@@ -3053,9 +3041,9 @@ func (d *Database) formatBytes(bytes int64) string {
 
 // 获取服务汇总信息
 func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
-	// 首先获取所有服务的基本信息
-	serviceRows, err := d.db.Query(`
-		SELECT 
+	// 一次性查询所有统计信息，避免N+1问题
+	rows, err := d.db.Query(`
+		SELECT
 			s.id,
 			s.ip_address,
 			s.custom_name,
@@ -3063,106 +3051,55 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 			CASE 
 				WHEN (strftime('%s', 'now') - strftime('%s', s.last_seen)) <= 30 THEN 'active'
 				ELSE 'inactive'
-			END as status
-		FROM services s
-		ORDER BY s.last_seen DESC
+			END as status,
+			COALESCE(it_counts.inbound_count, 0) as inbound_count,
+			COALESCE(ct_counts.client_count, 0) as client_count,
+			COALESCE(today_traffic.today_up, 0) as today_inbound_up,
+			COALESCE(today_traffic.today_down, 0) as today_inbound_down
+		FROM
+			services s
+		LEFT JOIN (
+			SELECT service_id, COUNT(id) as inbound_count FROM inbound_traffics WHERE status = 'active' GROUP BY service_id
+		) it_counts ON s.id = it_counts.service_id
+		LEFT JOIN (
+			SELECT service_id, COUNT(id) as client_count FROM client_traffics WHERE status = 'active' GROUP BY service_id
+		) ct_counts ON s.id = ct_counts.service_id
+		LEFT JOIN (
+			SELECT service_id, SUM(daily_up) as today_up, SUM(daily_down) as today_down FROM inbound_traffic_history WHERE date = DATE('now', 'localtime') GROUP BY service_id
+		) today_traffic ON s.id = today_traffic.service_id
+		ORDER BY
+			s.last_seen DESC;
 	`)
 	if err != nil {
 		return nil, err
 	}
-	defer serviceRows.Close()
+	defer rows.Close()
 
 	var results []map[string]interface{}
-	serviceMap := make(map[int]map[string]interface{})
-
-	// 处理服务基本信息
-	for serviceRows.Next() {
+	for rows.Next() {
 		var id int
 		var ipAddress, lastSeen, status string
 		var customName sql.NullString
+		var inboundCount, clientCount int
+		var todayInboundUp, todayInboundDown int64
 
-		scanErr := serviceRows.Scan(&id, &ipAddress, &customName, &lastSeen, &status)
-		if scanErr != nil {
-			return nil, scanErr
+		err := rows.Scan(&id, &ipAddress, &customName, &lastSeen, &status, &inboundCount, &clientCount, &todayInboundUp, &todayInboundDown)
+		if err != nil {
+			return nil, err
 		}
-
 		result := map[string]interface{}{
 			"id":                 id,
 			"ip":                 ipAddress,
 			"custom_name":        customName.String,
 			"last_seen":          lastSeen,
 			"status":             status,
-			"inbound_count":      0,
-			"client_count":       0,
-			"today_inbound_up":   0,
-			"today_inbound_down": 0,
+			"inbound_count":      inboundCount,
+			"client_count":       clientCount,
+			"today_inbound_up":   todayInboundUp,
+			"today_inbound_down": todayInboundDown,
 		}
-		serviceMap[id] = result
 		results = append(results, result)
 	}
-
-	// 查询今日入站流量（历史表）
-	todayRows, err := d.db.Query(`
-		SELECT service_id, SUM(daily_up) as today_up, SUM(daily_down) as today_down
-		FROM inbound_traffic_history
-		WHERE date = DATE('now', 'localtime')
-		GROUP BY service_id
-	`)
-	if err == nil {
-		defer todayRows.Close()
-		for todayRows.Next() {
-			var serviceID int
-			var todayUp, todayDown sql.NullInt64
-			err := todayRows.Scan(&serviceID, &todayUp, &todayDown)
-			if err == nil {
-				if service, exists := serviceMap[serviceID]; exists {
-					service["today_inbound_up"] = todayUp.Int64
-					service["today_inbound_down"] = todayDown.Int64
-				}
-			}
-		}
-	}
-
-	// 查询入站端口数量（基础表）
-	inboundCountRows, err := d.db.Query(`
-		SELECT service_id, COUNT(*) as inbound_count
-		FROM inbound_traffics
-		WHERE status = 'active'
-		GROUP BY service_id
-	`)
-	if err == nil {
-		defer inboundCountRows.Close()
-		for inboundCountRows.Next() {
-			var serviceID, count int
-			err := inboundCountRows.Scan(&serviceID, &count)
-			if err == nil {
-				if service, exists := serviceMap[serviceID]; exists {
-					service["inbound_count"] = count
-				}
-			}
-		}
-	}
-
-	// 查询用户数量（基础表）
-	clientCountRows, err := d.db.Query(`
-		SELECT service_id, COUNT(*) as client_count
-		FROM client_traffics
-		WHERE status = 'active'
-		GROUP BY service_id
-	`)
-	if err == nil {
-		defer clientCountRows.Close()
-		for clientCountRows.Next() {
-			var serviceID, count int
-			err := clientCountRows.Scan(&serviceID, &count)
-			if err == nil {
-				if service, exists := serviceMap[serviceID]; exists {
-					service["client_count"] = count
-				}
-			}
-		}
-	}
-
 	return results, nil
 }
 
@@ -3181,6 +3118,24 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 		return nil, err
 	}
 	service.IPAddress = rawIPAddress
+
+	// 批量查询所有入站端口的今日流量
+	inboundTrafficMap := make(map[int]struct{ Up, Down int64 })
+	inboundTrafficRows, err := d.db.Query(`
+		SELECT inbound_traffic_id, COALESCE(daily_up,0), COALESCE(daily_down,0)
+		FROM inbound_traffic_history
+		WHERE service_id = ? AND date = DATE('now', 'localtime')
+	`, serviceID)
+	if err == nil {
+		defer inboundTrafficRows.Close()
+		for inboundTrafficRows.Next() {
+			var inboundID int
+			var up, down int64
+			if err := inboundTrafficRows.Scan(&inboundID, &up, &down); err == nil {
+				inboundTrafficMap[inboundID] = struct{ Up, Down int64 }{up, down}
+			}
+		}
+	}
 
 	// 获取入站流量（基础信息）
 	inboundRows, err := d.db.Query(`
@@ -3203,10 +3158,33 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 			return nil, err
 		}
 		record.CustomName = customName.String
-		// 查询今日流量
-		dbRow := d.db.QueryRow(`SELECT COALESCE(daily_up,0), COALESCE(daily_down,0) FROM inbound_traffic_history WHERE inbound_traffic_id = ? AND date = DATE('now', 'localtime')`, record.ID)
-		dbRow.Scan(&record.Up, &record.Down)
+		// 从 map 获取今日流量
+		if v, ok := inboundTrafficMap[record.ID]; ok {
+			record.Up = v.Up
+			record.Down = v.Down
+		} else {
+			record.Up = 0
+			record.Down = 0
+		}
 		inboundTraffics = append(inboundTraffics, record)
+	}
+
+	// 批量查询所有客户端的今日流量
+	clientTrafficMap := make(map[int]struct{ Up, Down int64 })
+	clientTrafficRows, err := d.db.Query(`
+		SELECT client_traffic_id, COALESCE(daily_up,0), COALESCE(daily_down,0)
+		FROM client_traffic_history
+		WHERE service_id = ? AND date = DATE('now', 'localtime')
+	`, serviceID)
+	if err == nil {
+		defer clientTrafficRows.Close()
+		for clientTrafficRows.Next() {
+			var clientID int
+			var up, down int64
+			if err := clientTrafficRows.Scan(&clientID, &up, &down); err == nil {
+				clientTrafficMap[clientID] = struct{ Up, Down int64 }{up, down}
+			}
+		}
 	}
 
 	// 获取客户端流量（基础信息）
@@ -3229,9 +3207,14 @@ func (d *Database) GetServiceTraffic(serviceID int) (map[string]interface{}, err
 			return nil, err
 		}
 		record.CustomName = customName.String
-		// 查询今日流量
-		dbRow := d.db.QueryRow(`SELECT COALESCE(daily_up,0), COALESCE(daily_down,0) FROM client_traffic_history WHERE client_traffic_id = ? AND date = DATE('now', 'localtime')`, record.ID)
-		dbRow.Scan(&record.Up, &record.Down)
+		// 从 map 获取今日流量
+		if v, ok := clientTrafficMap[record.ID]; ok {
+			record.Up = v.Up
+			record.Down = v.Down
+		} else {
+			record.Up = 0
+			record.Down = 0
+		}
 		clientTraffics = append(clientTraffics, record)
 	}
 
@@ -3281,6 +3264,52 @@ func (d *Database) DeleteService(serviceID int) error {
 	return tx.Commit()
 }
 
+// 通用：处理每日流量统计
+func (d *Database) processDailyTraffic(tx *sql.Tx, table string, historyTable string, idField string, extraField string) error {
+	var query string
+	if table == "inbound_traffics" {
+		query = `SELECT id, service_id, tag, up, down FROM inbound_traffics WHERE status = 'active'`
+	} else if table == "client_traffics" {
+		query = `SELECT id, service_id, email, up, down FROM client_traffics WHERE status = 'active'`
+	} else {
+		return fmt.Errorf("不支持的表: %s", table)
+	}
+	rows, err := tx.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, serviceID int
+		var extra string
+		var dailyUp, dailyDown int64
+		err := rows.Scan(&id, &serviceID, &extra, &dailyUp, &dailyDown)
+		if err != nil {
+			return err
+		}
+		if dailyUp > 0 || dailyDown > 0 {
+			var insertQuery string
+			if table == "inbound_traffics" {
+				insertQuery = `INSERT OR REPLACE INTO inbound_traffic_history (inbound_traffic_id, service_id, tag, date, daily_up, daily_down, created_at) VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)`
+				_, err = tx.Exec(insertQuery, id, serviceID, extra, dailyUp, dailyDown)
+			} else {
+				insertQuery = `INSERT OR REPLACE INTO client_traffic_history (client_traffic_id, service_id, email, date, daily_up, daily_down, created_at) VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)`
+				_, err = tx.Exec(insertQuery, id, serviceID, extra, dailyUp, dailyDown)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		// 清零今日流量
+		_, err = tx.Exec("UPDATE "+table+" SET up = 0, down = 0 WHERE id = ?", id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // 每日流量统计任务（需要在每日0点执行）
 func (d *Database) DailyTrafficSummary() error {
 	log.Println("开始执行每日流量统计...")
@@ -3292,125 +3321,19 @@ func (d *Database) DailyTrafficSummary() error {
 	defer tx.Rollback()
 
 	// 处理入站流量记录
-	err = d.processDailyInboundTraffic(tx)
+	err = d.processDailyTraffic(tx, "inbound_traffics", "inbound_traffic_history", "tag", "tag")
 	if err != nil {
 		return err
 	}
 
 	// 处理客户端流量记录
-	err = d.processDailyClientTraffic(tx)
+	err = d.processDailyTraffic(tx, "client_traffics", "client_traffic_history", "email", "email")
 	if err != nil {
 		return err
 	}
 
 	log.Println("每日流量统计完成")
 	return tx.Commit()
-}
-
-// 处理入站流量的每日统计
-func (d *Database) processDailyInboundTraffic(tx *sql.Tx) error {
-	// 获取所有活跃的入站流量记录
-	rows, err := tx.Query(`
-		SELECT id, service_id, tag, up, down
-		FROM inbound_traffics 
-		WHERE status = 'active'
-	`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id, serviceID int
-		var tag string
-		var dailyUp, dailyDown int64
-
-		err := rows.Scan(&id, &serviceID, &tag, &dailyUp, &dailyDown)
-		if err != nil {
-			return err
-		}
-
-		// 如果今日有流量，记录到历史表
-		if dailyUp > 0 || dailyDown > 0 {
-			_, err = tx.Exec(`
-				INSERT OR REPLACE INTO inbound_traffic_history 
-				(inbound_traffic_id, service_id, tag, date, daily_up, daily_down, created_at)
-				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
-			`, id, serviceID, tag, dailyUp, dailyDown)
-			if err != nil {
-				return err
-			}
-
-			log.Printf("端口 %s: 记录昨日流量 up=%d, down=%d", tag, dailyUp, dailyDown)
-		}
-
-		// 清零今日流量
-		_, err = tx.Exec(`
-			UPDATE inbound_traffics 
-			SET up = 0, down = 0
-			WHERE id = ?
-		`, id)
-		if err != nil {
-			return err
-		}
-
-		log.Printf("端口 %s: 清零今日流量", tag)
-	}
-
-	return nil
-}
-
-// 处理客户端流量的每日统计
-func (d *Database) processDailyClientTraffic(tx *sql.Tx) error {
-	// 获取所有活跃的客户端流量记录
-	rows, err := tx.Query(`
-		SELECT id, service_id, email, up, down
-		FROM client_traffics 
-		WHERE status = 'active'
-	`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id, serviceID int
-		var email string
-		var dailyUp, dailyDown int64
-
-		err := rows.Scan(&id, &serviceID, &email, &dailyUp, &dailyDown)
-		if err != nil {
-			return err
-		}
-
-		// 如果今日有流量，记录到历史表
-		if dailyUp > 0 || dailyDown > 0 {
-			_, err = tx.Exec(`
-				INSERT OR REPLACE INTO client_traffic_history 
-				(client_traffic_id, service_id, email, date, daily_up, daily_down, created_at)
-				VALUES (?, ?, ?, DATE('now', 'localtime'), ?, ?, CURRENT_TIMESTAMP)
-			`, id, serviceID, email, dailyUp, dailyDown)
-			if err != nil {
-				return err
-			}
-
-			log.Printf("用户 %s: 记录昨日流量 up=%d, down=%d", email, dailyUp, dailyDown)
-		}
-
-		// 清零今日流量
-		_, err = tx.Exec(`
-			UPDATE client_traffics 
-			SET up = 0, down = 0
-			WHERE id = ?
-		`, id)
-		if err != nil {
-			return err
-		}
-
-		log.Printf("用户 %s: 清零今日流量", email)
-	}
-
-	return nil
 }
 
 // 创建/更新hy2配置表（支持多条配置）
@@ -3694,8 +3617,8 @@ func (api *DatabaseAPI) GetTrafficHistory(c *gin.Context) {
 	})
 }
 
-// 获取服务7天流量数据
-func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
+// 通用：获取服务N天流量数据
+func (api *DatabaseAPI) GetTrafficByDays(c *gin.Context, days int) {
 	serviceIDStr := c.Param("service_id")
 	serviceID, err := strconv.Atoi(serviceIDStr)
 	if err != nil {
@@ -3706,11 +3629,11 @@ func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
 		return
 	}
 
-	// 获取过去7天的日期（从6天前到今天，今天在最右边）
-	dates := make([]string, 7)
+	// 获取过去N天的日期（从N-1天前到今天，今天在最右边）
+	dates := make([]string, days)
 	trafficData := make(map[string]map[string]int64)
-	for i := 0; i < 7; i++ {
-		date := time.Now().In(time.Local).AddDate(0, 0, -(6 - i))
+	for i := 0; i < days; i++ {
+		date := time.Now().In(time.Local).AddDate(0, 0, -(days - 1 - i))
 		dateStr := date.Format("2006-01-02")
 		dates[i] = dateStr
 		trafficData[dateStr] = map[string]int64{
@@ -3719,19 +3642,19 @@ func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
 		}
 	}
 
-	// 查询7天内所有历史流量（包含今天），全部用 localtime
 	historyQuery := `
 		SELECT 
 			ith.date,
 			SUM(ith.daily_up) as total_up,
 			SUM(ith.daily_down) as total_down
 		FROM inbound_traffic_history ith
-		WHERE ith.service_id = ? AND ith.date >= DATE('now', '-6 days', 'localtime') AND ith.date <= DATE('now', 'localtime')
+		WHERE ith.service_id = ? AND ith.date >= DATE('now', ? || ' days', 'localtime') AND ith.date <= DATE('now', 'localtime')
 		GROUP BY ith.date
 		ORDER BY ith.date
 	`
-
-	historyRows, err := api.db.db.Query(historyQuery, serviceID)
+	// 组装参数
+	param := fmt.Sprintf("-%d", days-1)
+	historyRows, err := api.db.db.Query(historyQuery, serviceID, param)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -3741,40 +3664,25 @@ func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
 	}
 	defer historyRows.Close()
 
-	fmt.Println("开始遍历 historyRows")
-	count := 0
 	for historyRows.Next() {
-		count++
 		var date string
 		var totalUp, totalDown int64
 		err := historyRows.Scan(&date, &totalUp, &totalDown)
 		if err != nil {
 			continue
 		}
-		fmt.Printf("数据库查到的date: '%s', totalUp: %d, totalDown: %d\n", date, totalUp, totalDown)
 		date = strings.TrimSpace(date)
 		if len(date) > 10 {
 			date = date[:10]
 		}
-		// 兼容数据库查出来的 date 和 dates 数组格式
-		found := false
-		for _, d := range dates {
-			if strings.TrimSpace(d) == date {
-				trafficData[d]["upload"] = totalUp
-				trafficData[d]["download"] = totalDown
-				found = true
-				break
-			}
-		}
-		if !found {
-			fmt.Printf("未命中trafficData，date='%s', dates=%v\n", date, dates)
+		if _, ok := trafficData[date]; ok {
+			trafficData[date]["upload"] = totalUp
+			trafficData[date]["download"] = totalDown
 		}
 	}
-	fmt.Printf("historyRows 总数: %d\n", count)
-	fmt.Printf("最终 trafficData: %+v\n", trafficData)
 
-	uploadData := make([]int64, 7)
-	downloadData := make([]int64, 7)
+	uploadData := make([]int64, days)
+	downloadData := make([]int64, days)
 	for i, date := range dates {
 		if data, exists := trafficData[date]; exists {
 			uploadData[i] = data["upload"]
@@ -3790,110 +3698,19 @@ func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "获取7天流量数据成功",
+		"message": fmt.Sprintf("获取%d天流量数据成功", days),
 		"data":    result,
 	})
 }
 
+// 获取服务7天流量数据
+func (api *DatabaseAPI) GetWeeklyTraffic(c *gin.Context) {
+	api.GetTrafficByDays(c, 7)
+}
+
 // 获取服务30天流量数据
 func (api *DatabaseAPI) GetMonthlyTraffic(c *gin.Context) {
-	serviceIDStr := c.Param("service_id")
-	serviceID, err := strconv.Atoi(serviceIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "无效的服务ID",
-		})
-		return
-	}
-
-	// 获取过去30天的日期（从29天前到今天，今天在最右边）
-	dates := make([]string, 30)
-	trafficData := make(map[string]map[string]int64)
-	for i := 0; i < 30; i++ {
-		date := time.Now().In(time.Local).AddDate(0, 0, -(29 - i))
-		dateStr := date.Format("2006-01-02")
-		dates[i] = dateStr
-		trafficData[dateStr] = map[string]int64{
-			"upload":   0,
-			"download": 0,
-		}
-	}
-
-	// 查询30天内所有历史流量（包含今天），全部用 localtime
-	historyQuery := `
-		SELECT 
-			ith.date,
-			SUM(ith.daily_up) as total_up,
-			SUM(ith.daily_down) as total_down
-		FROM inbound_traffic_history ith
-		WHERE ith.service_id = ? AND ith.date >= DATE('now', '-29 days', 'localtime') AND ith.date <= DATE('now', 'localtime')
-		GROUP BY ith.date
-		ORDER BY ith.date
-	`
-
-	historyRows, err := api.db.db.Query(historyQuery, serviceID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "查询历史流量失败: " + err.Error(),
-		})
-		return
-	}
-	defer historyRows.Close()
-
-	fmt.Println("开始遍历 historyRows")
-	count := 0
-	for historyRows.Next() {
-		count++
-		var date string
-		var totalUp, totalDown int64
-		err := historyRows.Scan(&date, &totalUp, &totalDown)
-		if err != nil {
-			continue
-		}
-		fmt.Printf("数据库查到的date: '%s', totalUp: %d, totalDown: %d\n", date, totalUp, totalDown)
-		date = strings.TrimSpace(date)
-		if len(date) > 10 {
-			date = date[:10]
-		}
-		// 兼容数据库查出来的 date 和 dates 数组格式
-		found := false
-		for _, d := range dates {
-			if strings.TrimSpace(d) == date {
-				trafficData[d]["upload"] = totalUp
-				trafficData[d]["download"] = totalDown
-				found = true
-				break
-			}
-		}
-		if !found {
-			fmt.Printf("未命中trafficData，date='%s', dates=%v\n", date, dates)
-		}
-	}
-	fmt.Printf("historyRows 总数: %d\n", count)
-	fmt.Printf("最终 trafficData: %+v\n", trafficData)
-
-	uploadData := make([]int64, 30)
-	downloadData := make([]int64, 30)
-	for i, date := range dates {
-		if data, exists := trafficData[date]; exists {
-			uploadData[i] = data["upload"]
-			downloadData[i] = data["download"]
-		}
-	}
-
-	result := gin.H{
-		"dates":         dates,
-		"upload_data":   uploadData,
-		"download_data": downloadData,
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "获取30天流量数据成功",
-		"data":    result,
-	})
+	api.GetTrafficByDays(c, 30)
 }
 
 // 手动触发每日统计
@@ -4252,6 +4069,39 @@ func (api *DatabaseAPI) GetUserDetail(c *gin.Context) {
 	})
 }
 
+// 通用：更新自定义名称
+func (api *DatabaseAPI) updateCustomName(c *gin.Context, table string, idFields map[string]interface{}, customName string) {
+	// 构建SQL
+	setClause := "custom_name = ?"
+	whereClause := ""
+	args := []interface{}{customName}
+	first := true
+	for k, v := range idFields {
+		if first {
+			whereClause += k + " = ?"
+			first = false
+		} else {
+			whereClause += " AND " + k + " = ?"
+		}
+		args = append(args, v)
+	}
+	query := "UPDATE " + table + " SET " + setClause + " WHERE " + whereClause
+	_, err := api.db.db.Exec(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "更新自定义名称失败: " + err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":     true,
+		"message":     "自定义名称更新成功",
+		"data":        idFields,
+		"custom_name": customName,
+	})
+}
+
 // 更新服务自定义名称
 func (api *DatabaseAPI) UpdateServiceCustomName(c *gin.Context) {
 	idStr := c.Param("id")
@@ -4263,11 +4113,9 @@ func (api *DatabaseAPI) UpdateServiceCustomName(c *gin.Context) {
 		})
 		return
 	}
-
 	var request struct {
 		CustomName string `json:"custom_name"`
 	}
-
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -4275,32 +4123,13 @@ func (api *DatabaseAPI) UpdateServiceCustomName(c *gin.Context) {
 		})
 		return
 	}
-
-	// 更新自定义名称
-	_, err = api.db.db.Exec("UPDATE services SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", request.CustomName, id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "更新节点名称失败: " + err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "节点名称更新成功",
-		"data": gin.H{
-			"service_id":  id,
-			"custom_name": request.CustomName,
-		},
-	})
+	api.updateCustomName(c, "services", map[string]interface{}{"id": id}, request.CustomName)
 }
 
 // 更新入站端口自定义名称
 func (api *DatabaseAPI) UpdateInboundCustomName(c *gin.Context) {
 	serviceIDStr := c.Param("service_id")
 	tag := c.Param("tag")
-
 	serviceID, err := strconv.Atoi(serviceIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -4309,11 +4138,9 @@ func (api *DatabaseAPI) UpdateInboundCustomName(c *gin.Context) {
 		})
 		return
 	}
-
 	var request struct {
 		CustomName string `json:"custom_name"`
 	}
-
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -4321,33 +4148,13 @@ func (api *DatabaseAPI) UpdateInboundCustomName(c *gin.Context) {
 		})
 		return
 	}
-
-	// 更新自定义名称
-	_, err = api.db.db.Exec("UPDATE inbound_traffics SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE service_id = ? AND tag = ?", request.CustomName, serviceID, tag)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "更新入站失败: " + err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "入站更新成功",
-		"data": gin.H{
-			"service_id":  serviceID,
-			"tag":         tag,
-			"custom_name": request.CustomName,
-		},
-	})
+	api.updateCustomName(c, "inbound_traffics", map[string]interface{}{"service_id": serviceID, "tag": tag}, request.CustomName)
 }
 
 // 更新客户端自定义名称
 func (api *DatabaseAPI) UpdateClientCustomName(c *gin.Context) {
 	serviceIDStr := c.Param("service_id")
 	email := c.Param("email")
-
 	serviceID, err := strconv.Atoi(serviceIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -4356,11 +4163,9 @@ func (api *DatabaseAPI) UpdateClientCustomName(c *gin.Context) {
 		})
 		return
 	}
-
 	var request struct {
 		CustomName string `json:"custom_name"`
 	}
-
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -4368,86 +4173,12 @@ func (api *DatabaseAPI) UpdateClientCustomName(c *gin.Context) {
 		})
 		return
 	}
-
-	// 更新自定义名称
-	_, err = api.db.db.Exec("UPDATE client_traffics SET custom_name = ?, updated_at = CURRENT_TIMESTAMP WHERE service_id = ? AND email = ?", request.CustomName, serviceID, email)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "更新用户名称失败: " + err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "用户名称更新成功",
-		"data": gin.H{
-			"service_id":  serviceID,
-			"email":       email,
-			"custom_name": request.CustomName,
-		},
-	})
+	api.updateCustomName(c, "client_traffics", map[string]interface{}{"service_id": serviceID, "email": email}, request.CustomName)
 }
 
-// 下载端口历史数据
-func (api *DatabaseAPI) DownloadPortHistory(c *gin.Context) {
-	serviceIDStr := c.Param("service_id")
-	tag := c.Param("tag")
-
-	if serviceIDStr == "" || tag == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "缺少服务ID或端口标签参数",
-		})
-		return
-	}
-
-	serviceID, err := strconv.Atoi(serviceIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "无效的服务ID",
-		})
-		return
-	}
-
-	// 获取端口基本信息
-	var ip string
-
-	portQuery := `
-		SELECT 
-			s.ip_address AS ip
-		FROM inbound_traffics it
-		JOIN services s ON it.service_id = s.id
-		WHERE it.service_id = ? AND it.tag = ?
-	`
-
-	err = api.db.db.QueryRow(portQuery, serviceID, tag).Scan(
-		&ip,
-	)
-
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"error":   "端口信息不存在",
-		})
-		return
-	}
-
-	// 获取所有历史流量数据
-	historyQuery := `
-		SELECT 
-			date,
-			daily_up,
-			daily_down,
-			daily_up + daily_down as total_daily
-		FROM inbound_traffic_history
-		WHERE service_id = ? AND tag = ?
-		ORDER BY date DESC
-	`
-
-	rows, err := api.db.db.Query(historyQuery, serviceID, tag)
+// 通用：下载历史数据为CSV
+func (api *DatabaseAPI) downloadHistoryCSV(c *gin.Context, query string, queryArgs []interface{}, filenamePrefix string) {
+	rows, err := api.db.db.Query(query, queryArgs...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -4461,12 +4192,10 @@ func (api *DatabaseAPI) DownloadPortHistory(c *gin.Context) {
 	for rows.Next() {
 		var date string
 		var dailyUp, dailyDown, totalDaily int64
-
 		err := rows.Scan(&date, &dailyUp, &dailyDown, &totalDaily)
 		if err != nil {
 			continue
 		}
-
 		record := map[string]interface{}{
 			"date":        date,
 			"daily_up":    dailyUp,
@@ -4478,36 +4207,64 @@ func (api *DatabaseAPI) DownloadPortHistory(c *gin.Context) {
 
 	// 生成CSV内容
 	csvContent := "日期,上传流量(Bytes),下载流量(Bytes),总流量(Bytes),上传流量(格式化),下载流量(格式化),总流量(格式化)\n"
-
 	for _, record := range history {
 		date := record["date"].(string)
 		dailyUp := record["daily_up"].(int64)
 		dailyDown := record["daily_down"].(int64)
 		totalDaily := record["total_daily"].(int64)
-
-		// 格式化流量显示
 		upFormatted := formatBytes(dailyUp)
 		downFormatted := formatBytes(dailyDown)
 		totalFormatted := formatBytes(totalDaily)
-
 		csvContent += fmt.Sprintf("%s,%d,%d,%d,%s,%s,%s\n",
 			date, dailyUp, dailyDown, totalDaily, upFormatted, downFormatted, totalFormatted)
 	}
 
-	// 设置响应头
-	filename := fmt.Sprintf("端口历史数据_%s_%s_%s.csv", ip, tag, time.Now().In(time.Local).Format("20060102"))
+	filename := filenamePrefix + "_" + time.Now().In(time.Local).Format("20060102") + ".csv"
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	c.Header("Content-Length", fmt.Sprintf("%d", len(csvContent)))
-
 	c.String(http.StatusOK, csvContent)
+}
+
+// 下载端口历史数据
+func (api *DatabaseAPI) DownloadPortHistory(c *gin.Context) {
+	serviceIDStr := c.Param("service_id")
+	tag := c.Param("tag")
+	if serviceIDStr == "" || tag == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "缺少服务ID或端口标签参数",
+		})
+		return
+	}
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+	// 获取端口IP
+	var ip string
+	portQuery := `SELECT s.ip_address AS ip FROM inbound_traffics it JOIN services s ON it.service_id = s.id WHERE it.service_id = ? AND it.tag = ?`
+	err = api.db.db.QueryRow(portQuery, serviceID, tag).Scan(&ip)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "端口信息不存在",
+		})
+		return
+	}
+	// 查询历史数据
+	historyQuery := `SELECT date, daily_up, daily_down, daily_up + daily_down as total_daily FROM inbound_traffic_history WHERE service_id = ? AND tag = ? ORDER BY date DESC`
+	api.downloadHistoryCSV(c, historyQuery, []interface{}{serviceID, tag}, fmt.Sprintf("端口历史数据_%s_%s", ip, tag))
 }
 
 // 下载用户历史数据
 func (api *DatabaseAPI) DownloadUserHistory(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	email := c.Param("email")
-
 	if serviceID == "" || email == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -4515,18 +4272,8 @@ func (api *DatabaseAPI) DownloadUserHistory(c *gin.Context) {
 		})
 		return
 	}
-
-	// 获取用户基本信息
 	var ip string
-
-	userQuery := `
-		SELECT 
-			s.ip_address AS ip
-		FROM client_traffics ct
-		JOIN services s ON ct.service_id = s.id
-		WHERE ct.service_id = ? AND ct.email = ?
-	`
-
+	userQuery := `SELECT s.ip_address AS ip FROM client_traffics ct JOIN services s ON ct.service_id = s.id WHERE ct.service_id = ? AND ct.email = ?`
 	serviceIDInt, err := strconv.Atoi(serviceID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -4535,11 +4282,7 @@ func (api *DatabaseAPI) DownloadUserHistory(c *gin.Context) {
 		})
 		return
 	}
-
-	err = api.db.db.QueryRow(userQuery, serviceIDInt, email).Scan(
-		&ip,
-	)
-
+	err = api.db.db.QueryRow(userQuery, serviceIDInt, email).Scan(&ip)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
@@ -4547,73 +4290,8 @@ func (api *DatabaseAPI) DownloadUserHistory(c *gin.Context) {
 		})
 		return
 	}
-
-	// 获取所有历史流量数据
-	historyQuery := `
-		SELECT 
-			cth.date,
-			cth.daily_up,
-			cth.daily_down,
-			cth.daily_up + cth.daily_down as total_daily
-		FROM client_traffic_history cth
-		WHERE cth.service_id = ? AND cth.email = ?
-		ORDER BY cth.date DESC
-	`
-
-	rows, err := api.db.db.Query(historyQuery, serviceIDInt, email)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "查询历史数据失败: " + err.Error(),
-		})
-		return
-	}
-	defer rows.Close()
-
-	var history []map[string]interface{}
-	for rows.Next() {
-		var date string
-		var dailyUp, dailyDown, totalDaily int64
-
-		err := rows.Scan(&date, &dailyUp, &dailyDown, &totalDaily)
-		if err != nil {
-			continue
-		}
-
-		record := map[string]interface{}{
-			"date":        date,
-			"daily_up":    dailyUp,
-			"daily_down":  dailyDown,
-			"total_daily": totalDaily,
-		}
-		history = append(history, record)
-	}
-
-	// 生成CSV内容
-	csvContent := "日期,上传流量(Bytes),下载流量(Bytes),总流量(Bytes),上传流量(格式化),下载流量(格式化),总流量(格式化)\n"
-
-	for _, record := range history {
-		date := record["date"].(string)
-		dailyUp := record["daily_up"].(int64)
-		dailyDown := record["daily_down"].(int64)
-		totalDaily := record["total_daily"].(int64)
-
-		// 格式化流量显示
-		upFormatted := formatBytes(dailyUp)
-		downFormatted := formatBytes(dailyDown)
-		totalFormatted := formatBytes(totalDaily)
-
-		csvContent += fmt.Sprintf("%s,%d,%d,%d,%s,%s,%s\n",
-			date, dailyUp, dailyDown, totalDaily, upFormatted, downFormatted, totalFormatted)
-	}
-
-	// 设置响应头
-	filename := fmt.Sprintf("用户历史数据_%s_%s_%s.csv", ip, email, time.Now().In(time.Local).Format("20060102"))
-	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-	c.Header("Content-Length", fmt.Sprintf("%d", len(csvContent)))
-
-	c.String(http.StatusOK, csvContent)
+	historyQuery := `SELECT cth.date, cth.daily_up, cth.daily_down, cth.daily_up + cth.daily_down as total_daily FROM client_traffic_history cth WHERE cth.service_id = ? AND cth.email = ? ORDER BY cth.date DESC`
+	api.downloadHistoryCSV(c, historyQuery, []interface{}{serviceIDInt, email}, fmt.Sprintf("用户历史数据_%s_%s", ip, email))
 }
 
 // 格式化字节数
@@ -5321,6 +4999,7 @@ func hy2SyncOnce(cfg *database.Hy2Config) {
 		logger.Errorf("[HY2] 源API返回状态码: %d, 响应: %s", resp.StatusCode, string(body))
 		return
 	}
+
 	var raw struct {
 		User struct {
 			Tx int64 `json:"tx"`
@@ -5337,6 +5016,7 @@ func hy2SyncOnce(cfg *database.Hy2Config) {
 		return
 	}
 	logger.Infof("[HY2] 获取到流量数据: tx=%d, rx=%d", raw.User.Tx, raw.User.Rx)
+
 	// 2. 转换格式
 	postData := map[string]interface{}{
 		"inboundTraffics": []map[string]interface{}{
@@ -5350,6 +5030,7 @@ func hy2SyncOnce(cfg *database.Hy2Config) {
 		},
 	}
 	jsonBytes, _ := json.Marshal(postData)
+
 	// 3. POST到目标API
 	postReq, err := http.NewRequest("POST", cfg.TargetAPIURL, bytes.NewBuffer(jsonBytes))
 	if err != nil {
@@ -5612,7 +5293,7 @@ services:
     environment:
       - LISTEN_PORT=37022
       - DATABASE_PATH=/app/data/xtrafficdash.db
-      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}  # 如果不设置，默认是admin123
+      - PASSWORD=${PASSWORD:-admin123}  # 后端登录密码和JWT密钥基础，必须设置
       - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     networks:

@@ -58,7 +58,8 @@ USER appuser
 
 # 设置环境变量
 ENV DATABASE_PATH=/app/data/xtrafficdash.db
-ENV X_UI_PASSWORD=admin123
+# 设置后端登录密码和JWT密钥基础（必须与docker-compose一致）
+ENV PASSWORD=admin123
 ENV LISTEN_PORT=37022
 ENV DEBUG_MODE=true
 ENV LOG_LEVEL=debug

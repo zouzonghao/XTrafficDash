@@ -15,7 +15,6 @@
           ✏️
         </button>
       </h1>
-      <p>节点详情</p>
     </div>
 
     <div class="detail-container" v-if="selectedService">
@@ -536,6 +535,17 @@ onUnmounted(() => {
   vertical-align: middle;
 }
 
+.header h1 {
+  color: #222;
+  text-shadow: none;
+}
+.detail-title {
+  color: #222;
+}
+.section-title {
+  color: #222;
+}
+
 .chart-section {
   background: white;
   border-radius: 12px;
@@ -566,29 +576,69 @@ onUnmounted(() => {
 
 .chart-btn {
   padding: 6px 12px;
-  border: 1px solid #e1e8ed;
-  background: white;
-  color: #2c3e50;
-  border-radius: 6px;
+  border: 1.5px solid #70A1FF;
+  background: #fff;
+  color: #70A1FF;
+  border-radius: 20px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.18s;
+  margin-right: 8px;
 }
+.chart-btn:last-child { margin-right: 0; }
 
 .chart-btn:hover {
-  background: #f8f9fa;
-  border-color: #3498db;
+  background: #EAF3FF;
+  color: #1E90FF;
+  border-color: #1E90FF;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
 
 .chart-btn.active {
-  background: #3498db;
-  color: white;
-  border-color: #3498db;
+  background: #70A1FF;
+  color: #fff;
+  border-color: #70A1FF;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.18);
 }
 
 .chart-container {
   height: 400px;
   position: relative;
+}
+
+.refresh-button {
+  background: #70A1FF;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
+  position: relative;
+  overflow: hidden;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: #1E90FF;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(112,161,255,0.18);
+}
+
+.refresh-button:disabled {
+  background: #d1d1d6;
+  color: #fff;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.table-row {
+  border-left: 3px solid #70A1FF;
 }
 </style> 

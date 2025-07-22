@@ -5,7 +5,7 @@
       @click.stop="$emit('delete', service)"
       title="删除服务"
     >
-      ×
+      X
     </button>
     
     <div class="card-header">
@@ -260,5 +260,33 @@ onUnmounted(() => {
 
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
+}
+
+.delete-button {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: #FF6B81;
+  color: #fff;
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(255,107,129,0.10);
+}
+
+.delete-button:hover {
+  background: #FF4757;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(255,107,129,0.18);
 }
 </style> 

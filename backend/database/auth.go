@@ -1,6 +1,8 @@
 package database
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"net/http"
 	"os"
 	"time"
@@ -26,10 +28,22 @@ type Claims struct {
 
 var jwtSecret []byte
 
+// 生成带16位固定后缀的JWT密钥
+func getPasswordWithSuffix() string {
+	password := os.Getenv("PASSWORD")
+	if password == "" {
+		return ""
+	}
+	h := md5.New()
+	h.Write([]byte(password))
+	hash := hex.EncodeToString(h.Sum(nil))
+	return password + hash[:16]
+}
+
 // 初始化JWT密钥
 func InitJWT() {
-	// 从环境变量读取密钥
-	secret := os.Getenv("PASSWORD")
+	// 从环境变量读取密钥并加上16位固定后缀
+	secret := getPasswordWithSuffix()
 	if secret == "" {
 		panic("必须设置环境变量 PASSWORD 作为 JWT 密钥和登录密码")
 	}

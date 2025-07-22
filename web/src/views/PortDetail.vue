@@ -15,7 +15,6 @@
           ✏️
         </button>
       </h1>
-      <p>入站历史流量详情</p>
     </div>
 
     <div class="detail-container" v-if="portDetail">
@@ -491,16 +490,18 @@ onUnmounted(() => {
 <style scoped>
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 16px;
   margin-bottom: 25px;
 }
 
+/* 保留 info-item 的竖线 */
 .info-item {
   background: #f8f9fa;
   padding: 12px;
   border-radius: 6px;
-  border-left: 3px solid #007bff;
+  border-left: 3px solid #70A1FF;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
 
 .info-label {
@@ -603,6 +604,7 @@ onUnmounted(() => {
   color: #3498db;
 }
 
+/* 表格每行左侧竖线颜色改为 #70A1FF */
 .table-row {
   display: grid;
   grid-template-columns: 120px 1fr 1fr 1fr;
@@ -610,6 +612,7 @@ onUnmounted(() => {
   border-bottom: 1px solid #f1f3f4;
   transition: all 0.2s ease;
   align-items: center;
+  border-left: 3px solid #70A1FF;
 }
 
 .table-row:hover {
@@ -743,25 +746,31 @@ onUnmounted(() => {
 
 .chart-btn {
   padding: 6px 12px;
-  border: 1px solid #e1e8ed;
-  background: white;
-  color: #2c3e50;
-  border-radius: 6px;
+  border: 1.5px solid #70A1FF;
+  background: #fff;
+  color: #70A1FF;
+  border-radius: 20px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.18s;
+  margin-right: 8px;
 }
+.chart-btn:last-child { margin-right: 0; }
 
 .chart-btn:hover {
-  background: #f8f9fa;
-  border-color: #3498db;
+  background: #EAF3FF;
+  color: #1E90FF;
+  border-color: #1E90FF;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
 
 .chart-btn.active {
-  background: #3498db;
-  color: white;
-  border-color: #3498db;
+  background: #70A1FF;
+  color: #fff;
+  border-color: #70A1FF;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.18);
 }
 
 .chart-container {
@@ -780,21 +789,22 @@ onUnmounted(() => {
 }
 
 .download-button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #70A1FF;
+  color: #fff;
   border: none;
   padding: 12px 24px;
-  border-radius: 8px;
+  border-radius: 20px;
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
-
 .download-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+  background: #1E90FF;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
 
 .download-button:active {
@@ -806,5 +816,46 @@ onUnmounted(() => {
   color: #6c757d;
   font-size: 14px;
   margin-bottom: 0;
+}
+
+.refresh-button {
+  background: #70A1FF;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
+  position: relative;
+  overflow: hidden;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: #1E90FF;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(112,161,255,0.18);
+}
+
+.refresh-button:disabled {
+  background: #d1d1d6;
+  color: #fff;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.header h1 {
+  color: #222;
+  text-shadow: none;
+}
+.detail-title {
+  color: #222;
+}
+.section-title {
+  color: #222;
 }
 </style> 

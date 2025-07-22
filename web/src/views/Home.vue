@@ -2,7 +2,6 @@
   <div class="container">
     <div class="header">
       <h1>XTrafficDash</h1>
-      <p>多服务器流量统计</p>
       <button @click="handleLogout" class="logout-button">退出登录</button>
       <button @click="goHy2Setting" class="hy2-setting-button">HY2设置</button>
     </div>
@@ -34,9 +33,9 @@
     <div v-if="showDeleteModal" class="modal-overlay" @click="hideDeleteConfirm">
       <div class="modal" @click.stop>
         <h3>确认删除</h3>
-        <p>您确定要删除服务 <strong>{{ serviceToDelete?.custom_name || serviceToDelete?.ip }}</strong> 吗？</p>
+        <p>您确定要删除节点 <strong>{{ serviceToDelete?.custom_name || serviceToDelete?.ip }}</strong> 吗？</p>
         <p v-if="serviceToDelete?.custom_name" class="ip-info">IP：{{ serviceToDelete?.ip }}</p>
-        <p class="warning-text">此操作将删除该服务的所有数据，包括流量记录和历史数据，且无法恢复。</p>
+        <p class="warning-text">此操作将删除该节点的所有数据，包括流量记录和历史数据，且无法恢复。</p>
         <div class="modal-buttons">
           <button class="modal-button cancel" @click="hideDeleteConfirm">取消</button>
           <button class="modal-button confirm" @click="confirmDelete">确认删除</button>
@@ -142,20 +141,23 @@ onUnmounted(() => {
 
 <style scoped>
 .logout-button {
-  background: rgba(255,255,255,0.2);
-  color: white;
-  border: 1px solid rgba(255,255,255,0.3);
+  background: #FF6B81;
+  color: #fff;
+  border: none;
   padding: 8px 16px;
   border-radius: 20px;
   cursor: pointer;
   font-size: 0.9rem;
-  transition: all 0.3s ease;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
   margin-top: 10px;
+  box-shadow: 0 2px 8px rgba(255,107,129,0.10);
 }
 
 .logout-button:hover {
-  background: rgba(255,255,255,0.3);
+  background: #FF4757;
+  color: #fff;
   transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(255,107,129,0.18);
 }
 
 .retry-button {
@@ -169,8 +171,8 @@ onUnmounted(() => {
 }
 
 .hy2-setting-button {
-  background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
-  color: white;
+  background: #70A1FF;
+  color: #fff;
   border: none;
   padding: 8px 16px;
   border-radius: 20px;
@@ -178,11 +180,14 @@ onUnmounted(() => {
   font-size: 0.9rem;
   margin-left: 12px;
   margin-top: 10px;
-  transition: all 0.3s;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
 .hy2-setting-button:hover {
-  background: linear-gradient(135deg, #0984e3 0%, #74b9ff 100%);
+  background: #1E90FF;
+  color: #fff;
   transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
 
 .modal-overlay {
@@ -239,23 +244,45 @@ onUnmounted(() => {
 .modal-button {
   padding: 12px 24px;
   border: none;
-  border-radius: 8px;
+  border-radius: 20px;
   cursor: pointer;
   font-size: 1rem;
-  transition: all 0.3s ease;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .modal-button.cancel {
-  background: #ecf0f1;
-  color: #2c3e50;
+  background: #f1f2f6;
+  color: #222;
+}
+
+.modal-button.cancel:hover {
+  background: #e1e2e6;
+  color: #222;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
 }
 
 .modal-button.confirm {
-  background: #e74c3c;
-  color: white;
+  background: #FF6B81;
+  color: #fff;
 }
 
-.modal-button:hover {
-  transform: translateY(-2px);
+.modal-button.confirm:hover {
+  background: #FF4757;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(255,107,129,0.18);
+}
+
+.header h1 {
+  color: #222;
+  text-shadow: none;
+}
+.detail-title {
+  color: #222;
+}
+.section-title {
+  color: #222;
 }
 </style> 

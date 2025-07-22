@@ -5,7 +5,6 @@
     </button>
     <div class="header">
       <h1>HY2设置</h1>
-      <p>可配置多组HY2流量同步参数，每组独立同步</p>
     </div>
     <div class="content-blocks">
       <!-- XTrafficDash地址设置卡片 -->
@@ -13,7 +12,7 @@
         <div class="block-title">XTrafficDash地址</div>
         <form class="target-form" @submit.prevent="saveAll">
           <input v-model="targetApiUrl" type="text" class="target-input" placeholder="http://127.0.0.1:37022/api/traffic" required />
-          <p class="hint">所有HY2流量数据将发送到此地址</p>
+          <p class="hint">所有HY2流量数据将发送到此地址，默认为 http://127.0.0.1:37022/api/traffic </p>
         </form>
       </div>
       <!-- HY2配置列表卡片 -->
@@ -170,6 +169,13 @@ h1 .header {
   margin-left: 8px;
   vertical-align: middle;
 }
+.header h1 {
+  color: #222;
+  text-shadow: none;
+}
+.block-title {
+  color: #222;
+}
 
 .content-blocks {
   display: flex;
@@ -289,26 +295,42 @@ input[type="text"]:focus {
   margin-top: 12px;
   justify-content: center;
 }
-.add-btn, .save-button {
-  background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
-  color: white;
+.add-btn {
+  background: #70A1FF;
+  color: #fff;
   border: none;
   padding: 10px 26px;
-  border-radius: 22px;
+  border-radius: 20px;
   font-size: 1.08rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s, transform 0.1s, filter 0.2s;
-  box-shadow: 0 2px 8px rgba(9,132,227,0.08);
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
-.add-btn {
-  background: #27ae60;
-  box-shadow: 0 2px 8px rgba(39,174,96,0.08);
+.add-btn:hover {
+  background: #1E90FF;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
-.add-btn:hover, .save-button:hover {
-  filter: brightness(1.08);
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 4px 16px rgba(44,62,80,0.13);
+
+.save-button {
+  background: #6DC7A3;
+  color: #fff;
+  border: none;
+  padding: 10px 26px;
+  border-radius: 20px;
+  font-size: 1.08rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
+  box-shadow: 0 2px 8px rgba(109,199,163,0.10);
+}
+.save-button:hover {
+  background: #4BAE8C;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(109,199,163,0.18);
 }
 .add-btn:active, .save-button:active {
   filter: brightness(0.96);
@@ -316,19 +338,22 @@ input[type="text"]:focus {
   box-shadow: 0 2px 8px rgba(44,62,80,0.08);
 }
 .del-btn {
-  background: #e74c3c;
-  color: white;
+  background: #FF6B81;
+  color: #fff;
   border: none;
   padding: 9px 18px;
   border-radius: 18px;
   font-size: 1.03rem;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.18s;
   font-weight: 500;
-  box-shadow: 0 2px 8px rgba(231,76,60,0.08);
+  box-shadow: 0 2px 8px rgba(255,107,129,0.10);
 }
 .del-btn:hover {
-  background: #c0392b;
+  background: #FF4757;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(255,107,129,0.18);
 }
 .msg {
   margin-top: 18px;

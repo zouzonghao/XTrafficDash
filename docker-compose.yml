@@ -12,7 +12,7 @@ services:
     environment:
       - LISTEN_PORT=37022
       - DATABASE_PATH=/app/data/xtrafficdash.db
-      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123}  # 如果不设置，默认是admin123
+      - PASSWORD=${PASSWORD:-admin123}  # 后端登录密码和JWT密钥基础，必须设置
       - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     networks:

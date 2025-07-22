@@ -20,8 +20,8 @@ docker run -d \
   --name xtrafficdash \
   -p 37022:37022 \
   -e DATABASE_PATH=/app/data/xtrafficdash.db \
-  -e X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} \
-  -e TZ=${TZ:-Asia/Shanghai} \
+  -e X_UI_PASSWORD=admin123 \
+  -e TZ=Asia/Shanghai \
   --log-opt max-size=5m \
   --log-opt max-file=3 \
   --restart unless-stopped \
@@ -40,9 +40,9 @@ services:
     ports:
       - "37022:37022"
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
+      - TZ=Asia/Shanghai
       - DATABASE_PATH=/app/data/xtrafficdash.db
-      - X_UI_PASSWORD=${X_UI_PASSWORD:-admin123} 
+      - X_UI_PASSWORD=admin123
     logging:
       options:
         max-size: "5m"
