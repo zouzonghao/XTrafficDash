@@ -67,6 +67,11 @@ func (api *DatabaseAPI) GetServices(c *gin.Context) {
 		return
 	}
 
+	// 兼容空数据，返回 []
+	if services == nil {
+		services = make([]map[string]interface{}, 0)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "获取服务列表成功",
