@@ -16,18 +16,26 @@
 ### docker run
 
 ```sh
+mkdir -p /usr/xtrafficdash/data && \
+chmod 777 /usr/xtrafficdash/data && \
 docker run -d \
   --name xtrafficdash \
   -p 37022:37022 \
-  -e DATABASE_PATH=/app/data/xtrafficdash.db \
-  -e PASSWORD=admin123 \
+  -v  /usr/xtrafficdash/data:/app/data \
   -e TZ=Asia/Shanghai \
+  -e PASSWORD=admin123 \
   --log-opt max-size=5m \
   --log-opt max-file=3 \
   --restart unless-stopped \
-  sanqi37/xtrafficdash
+  sanqi37/xtrafficdash 
 ```
 ### docker compose 部署
+
+同样首先创建文件夹，给读写权限，否则容器无法创建数据库！
+```sh
+mkdir -p /usr/xtrafficdash/data && \
+chmod 777 /usr/xtrafficdash/data 
+```
 
 ```
 version: '3.8'
@@ -43,6 +51,8 @@ services:
       - TZ=Asia/Shanghai
       - DATABASE_PATH=/app/data/xtrafficdash.db
       - PASSWORD=admin123
+    volumes:
+      - /usr/xtrafficdash/data:/app/data
     logging:
       options:
         max-size: "5m"
