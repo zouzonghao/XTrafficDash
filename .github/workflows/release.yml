@@ -1,0 +1,52 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'   # 只有推送 tag 时才触发
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 后端 Go 构建
+      - name: 设置 Go 环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+
+      - name: 编译 Go 后端 (Linux amd64)
+        run: |
+          cd backend
+          go mod tidy
+          GOOS=linux GOARCH=amd64 go build -o x-ui-backend
+
+      # 前端 Vue 构建
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: 安装前端依赖并构建
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      # 打包发布
+      - name: 打包发布文件
+        run: |
+          mkdir release
+          cp backend/x-ui-backend release/
+          cp -r web/dist release/web-dist
+
+      - name: 创建 Release 并上传资源
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

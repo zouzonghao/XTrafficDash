@@ -74,6 +74,10 @@ trafficStats:
   listen: :37023 
   secret: passwd 
 ```
+```sh
+# 重启 hy2
+systemctl restart hysteria-server.service
+```
 #### 2. 在首页点击 `HY2设置` 进行添加
 
 
