@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'   # 只有推送 tag 时才触发
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
