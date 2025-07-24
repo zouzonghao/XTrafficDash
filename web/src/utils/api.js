@@ -44,7 +44,7 @@ export const servicesAPI = {
   getServices: () => api.get('/db/services'),
   
   // 获取服务详情
-  getServiceDetail: (serviceId) => api.get(`/db/services/${serviceId}/traffic`),
+  getServiceDetail: (serviceId, days = 7) => api.get(`/db/services/${serviceId}/traffic?days=${days}`),
   
   // 删除服务
   deleteService: (serviceId) => api.delete(`/db/services/${serviceId}`),

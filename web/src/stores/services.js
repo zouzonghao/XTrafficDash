@@ -36,9 +36,9 @@ export const useServicesStore = defineStore('services', () => {
     selectedService.value = service
   }
 
-  const loadServiceDetail = async (serviceId) => {
+  const loadServiceDetail = async (serviceId, days = 7) => {
     try {
-      const response = await servicesAPI.getServiceDetail(serviceId)
+      const response = await servicesAPI.getServiceDetail(serviceId, days)
       if (response.data.success) {
         selectedService.value = {
           ...selectedService.value,

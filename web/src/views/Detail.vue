@@ -299,124 +299,126 @@ const closeServiceModal = () => {
 // 切换图表周期
 const switchChartPeriod = async (period) => {
   if (chartPeriod.value === period) return
-  
   chartPeriod.value = period
-  await createDetailChart()
+  const days = period === '7d' ? 7 : 30
+  if (selectedService.value) {
+    await servicesStore.loadServiceDetail(selectedService.value.id, days)
+    await createDetailChart()
+  }
 }
 
 const createDetailChart = async () => {
   try {
-    // 根据周期选择API
-    const response = chartPeriod.value === '7d' 
-      ? await servicesAPI.getWeeklyTraffic(selectedService.value.id)
-      : await servicesAPI.getMonthlyTraffic(selectedService.value.id)
-    if (response.data.success) {
-      const data = response.data.data
-      const ctx = document.getElementById('detail-chart')
-      
-      if (ctx) {
-        // 销毁现有图表
-        if (detailChart) {
-          detailChart.destroy()
-        }
-        
-        detailChart = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: data.dates,
-            datasets: [
-              {
-                label: '上传',
-                data: data.upload_data,
-                borderColor: '#74b9ff',
-                backgroundColor: 'rgba(116, 185, 255, 0.1)',
-                tension: 0.4,
-                fill: true
-              },
-              {
-                label: '下载',
-                data: data.download_data,
-                borderColor: '#00b894',
-                backgroundColor: 'rgba(0, 184, 148, 0.1)',
-                tension: 0.4,
-                fill: true
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: true,
-                position: 'top',
-                labels: {
-                  color: '#2c3e50',
-                  font: {
-                    size: 14,
-                    weight: 'bold'
-                  }
-                }
-              }
+    let trafficData
+    if (chartPeriod.value === '7d' && selectedService.value.weekly_traffic) {
+      trafficData = selectedService.value.weekly_traffic
+    } else if (chartPeriod.value === '30d' && selectedService.value.monthly_traffic) {
+      trafficData = selectedService.value.monthly_traffic
+    } else {
+      // 数据不存在，跳过
+      return
+    }
+    const ctx = document.getElementById('detail-chart')
+    if (ctx) {
+      if (detailChart) {
+        detailChart.destroy()
+      }
+      detailChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: trafficData.dates,
+          datasets: [
+            {
+              label: '上传',
+              data: trafficData.upload_data,
+              borderColor: '#74b9ff',
+              backgroundColor: 'rgba(116, 185, 255, 0.1)',
+              tension: 0.4,
+              fill: true
             },
-            scales: {
-              x: {
-                display: true,
-                title: {
-                  display: true,
-                  text: '日期',
-                  color: '#2c3e50',
-                  font: {
-                    size: 14,
-                    weight: 'bold'
-                  }
-                },
-                ticks: {
-                  color: '#2c3e50',
-                  font: {
-                    size: 12
-                  }
-                },
-                grid: {
-                  color: 'rgba(44, 62, 80, 0.1)'
-                }
-              },
-              y: {
-                display: true,
-                title: {
-                  display: true,
-                  text: '流量',
-                  color: '#2c3e50',
-                  font: {
-                    size: 14,
-                    weight: 'bold'
-                  }
-                },
-                ticks: {
-                  color: '#2c3e50',
-                  font: {
-                    size: 12
-                  },
-                  callback: function(value, index, values) {
-                    if (value >= 1024 * 1024 * 1024) {
-                      return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-                    } else if (value >= 1024 * 1024) {
-                      return (value / (1024 * 1024)).toFixed(1) + ' MB';
-                    } else if (value >= 1024) {
-                      return (value / 1024).toFixed(1) + ' KB';
-                    } else {
-                      return value + ' B';
-                    }
-                  }
-                },
-                grid: {
-                  color: 'rgba(44, 62, 80, 0.1)'
+            {
+              label: '下载',
+              data: trafficData.download_data,
+              borderColor: '#00b894',
+              backgroundColor: 'rgba(0, 184, 148, 0.1)',
+              tension: 0.4,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top',
+              labels: {
+                color: '#2c3e50',
+                font: {
+                  size: 14,
+                  weight: 'bold'
                 }
               }
             }
+          },
+          scales: {
+            x: {
+              display: true,
+              title: {
+                display: true,
+                text: '日期',
+                color: '#2c3e50',
+                font: {
+                  size: 14,
+                  weight: 'bold'
+                }
+              },
+              ticks: {
+                color: '#2c3e50',
+                font: {
+                  size: 12
+                }
+              },
+              grid: {
+                color: 'rgba(44, 62, 80, 0.1)'
+              }
+            },
+            y: {
+              display: true,
+              title: {
+                display: true,
+                text: '流量',
+                color: '#2c3e50',
+                font: {
+                  size: 14,
+                  weight: 'bold'
+                }
+              },
+              ticks: {
+                color: '#2c3e50',
+                font: {
+                  size: 12
+                },
+                callback: function(value, index, values) {
+                  if (value >= 1024 * 1024 * 1024) {
+                    return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+                  } else if (value >= 1024 * 1024) {
+                    return (value / (1024 * 1024)).toFixed(1) + ' MB';
+                  } else if (value >= 1024) {
+                    return (value / 1024).toFixed(1) + ' KB';
+                  } else {
+                    return value + ' B';
+                  }
+                }
+              },
+              grid: {
+                color: 'rgba(44, 62, 80, 0.1)'
+              }
+            }
           }
-        })
-      }
+        }
+      })
     }
   } catch (error) {
     console.error('创建详情图表失败:', error)
@@ -427,7 +429,8 @@ const refreshDetail = async () => {
   if (selectedService.value && !isRefreshing.value) {
     isRefreshing.value = true
     try {
-      await servicesStore.loadServiceDetail(selectedService.value.id)
+      const days = chartPeriod.value === '7d' ? 7 : 30
+      await servicesStore.loadServiceDetail(selectedService.value.id, days)
       await createDetailChart()
     } catch (error) {
       console.error('刷新数据失败:', error)
@@ -442,10 +445,10 @@ const startAutoRefresh = () => {
   if (refreshInterval) {
     clearInterval(refreshInterval)
   }
-  // 每60秒刷新一次，确保图表数据实时更新
   refreshInterval = setInterval(async () => {
     if (selectedService.value) {
-      await servicesStore.loadServiceDetail(selectedService.value.id)
+      const days = chartPeriod.value === '7d' ? 7 : 30
+      await servicesStore.loadServiceDetail(selectedService.value.id, days)
       await createDetailChart()
     }
   }, 60000)
@@ -509,7 +512,8 @@ onMounted(async () => {
   
   // 加载服务详情
   if (selectedService.value) {
-    await servicesStore.loadServiceDetail(serviceId)
+    const days = chartPeriod.value === '7d' ? 7 : 30
+    await servicesStore.loadServiceDetail(serviceId, days)
     await createDetailChart()
     startAutoRefresh()
   }

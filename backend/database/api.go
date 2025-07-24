@@ -67,9 +67,61 @@ func (api *DatabaseAPI) GetServices(c *gin.Context) {
 		return
 	}
 
-	// 兼容空数据，返回 []
 	if services == nil {
 		services = make([]map[string]interface{}, 0)
+	}
+
+	// 为每个服务附加7天流量数据
+	for _, service := range services {
+		serviceID, ok := service["id"].(int)
+		if !ok {
+			continue
+		}
+		days := 7
+		dates := make([]string, days)
+		trafficData := make(map[string]map[string]int64)
+		for i := 0; i < days; i++ {
+			date := time.Now().In(time.Local).AddDate(0, 0, -(days - 1 - i))
+			dateStr := date.Format("2006-01-02")
+			dates[i] = dateStr
+			trafficData[dateStr] = map[string]int64{"upload": 0, "download": 0}
+		}
+		historyQuery := `
+			SELECT date, SUM(daily_up) as total_up, SUM(daily_down) as total_down
+			FROM inbound_traffic_history
+			WHERE service_id = ? AND date >= DATE('now', ? || ' days', 'localtime') AND date <= DATE('now', 'localtime')
+			GROUP BY date
+		`
+		param := fmt.Sprintf("-%d", days-1)
+		historyRows, err := api.db.db.Query(historyQuery, serviceID, param)
+		if err == nil {
+			for historyRows.Next() {
+				var date string
+				var totalUp, totalDown int64
+				historyRows.Scan(&date, &totalUp, &totalDown)
+				if len(date) > 10 {
+					date = date[:10]
+				}
+				if _, ok := trafficData[date]; ok {
+					trafficData[date]["upload"] = totalUp
+					trafficData[date]["download"] = totalDown
+				}
+			}
+			historyRows.Close()
+		}
+		uploadData := make([]int64, days)
+		downloadData := make([]int64, days)
+		for i, date := range dates {
+			if data, exists := trafficData[date]; exists {
+				uploadData[i] = data["upload"]
+				downloadData[i] = data["download"]
+			}
+		}
+		service["weekly_traffic"] = map[string]interface{}{
+			"dates":         dates,
+			"upload_data":   uploadData,
+			"download_data": downloadData,
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -98,6 +150,62 @@ func (api *DatabaseAPI) GetServiceTraffic(c *gin.Context) {
 			"error":   "获取服务流量失败: " + err.Error(),
 		})
 		return
+	}
+
+	// 新增：聚合历史流量
+	daysStr := c.DefaultQuery("days", "7")
+	days, _ := strconv.Atoi(daysStr)
+	if days <= 0 || (days != 7 && days != 30) {
+		days = 7
+	}
+	dates := make([]string, days)
+	trafficMap := make(map[string]map[string]int64)
+	for i := 0; i < days; i++ {
+		date := time.Now().In(time.Local).AddDate(0, 0, -(days - 1 - i))
+		dateStr := date.Format("2006-01-02")
+		dates[i] = dateStr
+		trafficMap[dateStr] = map[string]int64{"upload": 0, "download": 0}
+	}
+	historyQuery := `
+		SELECT date, SUM(daily_up) as total_up, SUM(daily_down) as total_down
+		FROM inbound_traffic_history
+		WHERE service_id = ? AND date >= DATE('now', ? || ' days', 'localtime')
+		GROUP BY date
+	`
+	historyRows, err := api.db.db.Query(historyQuery, id, fmt.Sprintf("-%d", days-1))
+	if err == nil {
+		for historyRows.Next() {
+			var date string
+			var totalUp, totalDown int64
+			historyRows.Scan(&date, &totalUp, &totalDown)
+			date = strings.TrimSpace(date[:10])
+			if _, ok := trafficMap[date]; ok {
+				trafficMap[date]["upload"] = totalUp
+				trafficMap[date]["download"] = totalDown
+			}
+		}
+		historyRows.Close()
+	}
+	uploadData := make([]int64, days)
+	downloadData := make([]int64, days)
+	for i, date := range dates {
+		if data, exists := trafficMap[date]; exists {
+			uploadData[i] = data["upload"]
+			downloadData[i] = data["download"]
+		}
+	}
+	if days == 7 {
+		traffic["weekly_traffic"] = map[string]interface{}{
+			"dates":         dates,
+			"upload_data":   uploadData,
+			"download_data": downloadData,
+		}
+	} else if days == 30 {
+		traffic["monthly_traffic"] = map[string]interface{}{
+			"dates":         dates,
+			"upload_data":   uploadData,
+			"download_data": downloadData,
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

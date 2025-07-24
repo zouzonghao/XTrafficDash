@@ -23,7 +23,7 @@
         v-for="service in sortedServices"
         :key="service.id"
         :service="service"
-        :trafficData="trafficDataMap[service.id]"
+        :trafficData="service.weekly_traffic"
         @select="handleSelectService"
         @delete="handleDeleteService"
       />
@@ -51,7 +51,7 @@ import { useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
 import { useAuthStore } from '../stores/auth'
 import ServiceCard from '../components/ServiceCard.vue'
-import { servicesAPI } from '../utils/api'
+// import { servicesAPI } from '../utils/api' // 不再需要
 
 const router = useRouter()
 const servicesStore = useServicesStore()
@@ -59,7 +59,7 @@ const authStore = useAuthStore()
 
 const showDeleteModal = ref(false)
 const serviceToDelete = ref(null)
-const trafficDataMap = ref({})
+// const trafficDataMap = ref({}) // 移除
 
 const handleSelectService = (service) => {
   servicesStore.selectService(service)
@@ -96,16 +96,7 @@ const goHy2Setting = () => {
   router.push('/hy2-setting')
 }
 
-const loadAllTrafficData = async () => {
-  const map = {}
-  for (const service of servicesStore.services) {
-    const res = await servicesAPI.getWeeklyTraffic(service.id)
-    if (res.data.success) {
-      map[service.id] = res.data.data
-    }
-  }
-  trafficDataMap.value = map
-}
+// const loadAllTrafficData = async () => { ... } // 移除
 
 // 排序后的服务列表
 const sortedServices = computed(() => {
@@ -130,7 +121,7 @@ const sortedServices = computed(() => {
 
 onMounted(async () => {
   await servicesStore.loadServices()
-  await loadAllTrafficData()
+  // await loadAllTrafficData() // 移除
   servicesStore.startAutoRefresh()
 })
 
