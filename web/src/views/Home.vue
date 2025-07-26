@@ -2,12 +2,24 @@
   <div class="container">
     <div class="header">
       <h1>XTrafficDash</h1>
-      <button @click="handleLogout" class="logout-button">退出登录</button>
-      <button @click="goHy2Setting" class="hy2-setting-button">HY2设置</button>
+      <div class="header-btn-group">
+        <button @click="handleLogout" class="logout-button">退出登录</button>
+        <button @click="goHy2Setting" class="hy2-setting-button">HY2设置</button>
+        <button @click="toggleAutoRefresh" :class="['refresh-home-button', { 'refresh-on': autoRefreshEnabled }]">
+          <template v-if="autoRefreshEnabled">
+            <span>{{ countdown }}</span>
+            <span class="cancel-auto-refresh">✕</span>
+          </template>
+          <template v-else>
+            自动刷新
+          </template>
+        </button>
+      </div>
     </div>
 
-    <div v-if="servicesStore.loading" class="loading">
-      加载中...
+    <div v-if="servicesStore.loading" class="modern-loading">
+      <div class="spinner"></div>
+      <div class="loading-text">正在加载数据...</div>
     </div>
 
     <div v-else-if="servicesStore.error" class="error">
@@ -96,6 +108,50 @@ const goHy2Setting = () => {
   router.push('/hy2-setting')
 }
 
+const autoRefreshEnabled = ref(false)
+const countdown = ref(30)
+let autoRefreshTimer = null
+let isRefreshing = false
+
+const startAutoRefresh = () => {
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer)
+  countdown.value = 30
+  autoRefreshTimer = setInterval(async () => {
+    if (!autoRefreshEnabled.value) return
+    if (countdown.value > 0) {
+      countdown.value--
+    } else {
+      if (!isRefreshing) {
+        isRefreshing = true
+        try {
+          await servicesStore.loadServices(true)
+        } finally {
+          countdown.value = 30
+          isRefreshing = false
+        }
+      }
+    }
+  }, 1000)
+}
+
+const stopAutoRefresh = () => {
+  autoRefreshEnabled.value = false
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
+  countdown.value = 30
+}
+
+const toggleAutoRefresh = () => {
+  if (autoRefreshEnabled.value) {
+    stopAutoRefresh()
+  } else {
+    autoRefreshEnabled.value = true
+    startAutoRefresh()
+  }
+}
+
 // const loadAllTrafficData = async () => { ... } // 移除
 
 // 排序后的服务列表
@@ -121,12 +177,11 @@ const sortedServices = computed(() => {
 
 onMounted(async () => {
   await servicesStore.loadServices()
-  // await loadAllTrafficData() // 移除
-  servicesStore.startAutoRefresh()
+  // 已移除: servicesStore.startAutoRefresh()
 })
 
 onUnmounted(() => {
-  servicesStore.stopAutoRefresh()
+  stopAutoRefresh()
 })
 </script>
 
@@ -179,6 +234,66 @@ onUnmounted(() => {
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
+}
+
+.header-btn-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.refresh-home-button {
+  min-width: 90px;
+  background: #4cbab4;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-left: 12px;
+  margin-top: 10px;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
+}
+.refresh-home-button.refresh-on {
+  min-width: 90px;
+  background: #05a8a5;
+  color: #fff;
+  animation: refresh-breath 1.8s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(36,153,151,0.25), 0 2px 8px rgba(112,161,255,0.10);
+}
+@keyframes refresh-breath {
+  0% {
+    background: #249997;
+    box-shadow: 0 0 0 0 rgba(36,153,151,0.25), 0 2px 8px rgba(112,161,255,0.10);
+  }
+  50% {
+    background: #3fd1c7;
+    box-shadow: 0 0 16px 8px rgba(36,153,151,0.18), 0 2px 16px rgba(112,161,255,0.18);
+  }
+  100% {
+    background: #249997;
+    box-shadow: 0 0 0 0 rgba(36,153,151,0.25), 0 2px 8px rgba(112,161,255,0.10);
+  }
+}
+.refresh-home-button:hover {
+  background: #249980;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(46,204,64,0.18);
+}
+.cancel-auto-refresh {
+  margin-left: 8px;
+  font-size: 1.1em;
+  color: #fff;
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.refresh-home-button:hover .cancel-auto-refresh {
+  opacity: 1;
 }
 
 .modal-overlay {
@@ -275,5 +390,33 @@ onUnmounted(() => {
 }
 .section-title {
   color: #222;
+}
+
+.modern-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 60px 0 40px 0;
+}
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 5px solid #e0e0e0;
+  border-top: 5px solid #70A1FF;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 18px;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.loading-text {
+  color: #222;
+  font-size: 1.15rem;
+  font-weight: 500;
+  letter-spacing: 1px;
+  margin-top: 0;
 }
 </style> 

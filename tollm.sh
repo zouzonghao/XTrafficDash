@@ -7,7 +7,7 @@ OUTPUT_FILE="code_summary_for_llm.txt"
 
 # 要包含的文件扩展名列表（用空格分隔）
 # 你可以根据需要添加或删除扩展名
-FILE_EXTENSIONS=".go .sql .py .js .java .html .css .ts  .yml .yaml .json .xml .c .cpp .h .hpp .cs .rb .php .rs .kt .vue"
+FILE_EXTENSIONS=".go .sql .py .js .java .html .css .ts   .yaml .json .xml .c .cpp .h .hpp .cs .rb .php .rs .kt .vue"
 
 # 要忽略的目录列表（使用 shell 数组，每个元素是一个目录）
 # 每个目录都应该用引号括起来，以防万一路径包含空格或特殊字符

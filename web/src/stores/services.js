@@ -7,12 +7,16 @@ export const useServicesStore = defineStore('services', () => {
   const selectedService = ref(null)
   const loading = ref(false)
   const error = ref(null)
-  const refreshInterval = ref(null)
+  // 新增：详情缓存
+  const detailsCache = ref({})
 
-  const loadServices = async () => {
+  // 加载服务列表，支持强制刷新
+  const loadServices = async (force = false) => {
+    if (services.value.length > 0 && !force) {
+      return;
+    }
     loading.value = true
     error.value = null
-    
     try {
       const response = await servicesAPI.getServices()
       if (response.data.success) {
@@ -32,11 +36,18 @@ export const useServicesStore = defineStore('services', () => {
     }
   }
 
+  // 选择服务
   const selectService = (service) => {
     selectedService.value = service
   }
 
-  const loadServiceDetail = async (serviceId, days = 7) => {
+  // 加载服务详情，支持天数和强制刷新
+  const loadServiceDetail = async (serviceId, days = 7, force = false) => {
+    const cacheKey = `${serviceId}-${days}d`;
+    if (detailsCache.value[cacheKey] && !force) {
+      selectedService.value = detailsCache.value[cacheKey];
+      return;
+    }
     try {
       const response = await servicesAPI.getServiceDetail(serviceId, days)
       if (response.data.success) {
@@ -44,6 +55,7 @@ export const useServicesStore = defineStore('services', () => {
           ...selectedService.value,
           ...response.data.data
         }
+        detailsCache.value[cacheKey] = selectedService.value
       }
     } catch (error) {
       console.error('加载服务详情失败:', error)
@@ -65,30 +77,13 @@ export const useServicesStore = defineStore('services', () => {
     }
   }
 
-  // 开始自动刷新
-  const startAutoRefresh = () => {
-    if (refreshInterval.value) {
-      clearInterval(refreshInterval.value)
-    }
-    // 每60秒刷新一次
-    refreshInterval.value = setInterval(() => {
-      loadServices()
-    }, 60000)
-  }
-
-  // 停止自动刷新
-  const stopAutoRefresh = () => {
-    if (refreshInterval.value) {
-      clearInterval(refreshInterval.value)
-      refreshInterval.value = null
-    }
-  }
+  // 移除定时刷新相关代码
 
   // 强制刷新
   const forceRefresh = () => {
-    loadServices()
+    loadServices(true)
     if (selectedService.value) {
-      loadServiceDetail(selectedService.value.id)
+      loadServiceDetail(selectedService.value.id, 7, true)
     }
   }
 
@@ -101,8 +96,6 @@ export const useServicesStore = defineStore('services', () => {
     selectService,
     loadServiceDetail,
     deleteService,
-    startAutoRefresh,
-    stopAutoRefresh,
     forceRefresh
   }
 }) 

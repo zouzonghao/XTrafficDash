@@ -1652,12 +1652,16 @@ export const useServicesStore = defineStore('services', () => {
   const selectedService = ref(null)
   const loading = ref(false)
   const error = ref(null)
-  const refreshInterval = ref(null)
+  // 新增：详情缓存
+  const detailsCache = ref({})
 
-  const loadServices = async () => {
+  // 加载服务列表，支持强制刷新
+  const loadServices = async (force = false) => {
+    if (services.value.length > 0 && !force) {
+      return;
+    }
     loading.value = true
     error.value = null
-    
     try {
       const response = await servicesAPI.getServices()
       if (response.data.success) {
@@ -1677,11 +1681,18 @@ export const useServicesStore = defineStore('services', () => {
     }
   }
 
+  // 选择服务
   const selectService = (service) => {
     selectedService.value = service
   }
 
-  const loadServiceDetail = async (serviceId, days = 7) => {
+  // 加载服务详情，支持天数和强制刷新
+  const loadServiceDetail = async (serviceId, days = 7, force = false) => {
+    const cacheKey = `${serviceId}-${days}d`;
+    if (detailsCache.value[cacheKey] && !force) {
+      selectedService.value = detailsCache.value[cacheKey];
+      return;
+    }
     try {
       const response = await servicesAPI.getServiceDetail(serviceId, days)
       if (response.data.success) {
@@ -1689,6 +1700,7 @@ export const useServicesStore = defineStore('services', () => {
           ...selectedService.value,
           ...response.data.data
         }
+        detailsCache.value[cacheKey] = selectedService.value
       }
     } catch (error) {
       console.error('加载服务详情失败:', error)
@@ -1710,30 +1722,13 @@ export const useServicesStore = defineStore('services', () => {
     }
   }
 
-  // 开始自动刷新
-  const startAutoRefresh = () => {
-    if (refreshInterval.value) {
-      clearInterval(refreshInterval.value)
-    }
-    // 每60秒刷新一次
-    refreshInterval.value = setInterval(() => {
-      loadServices()
-    }, 60000)
-  }
-
-  // 停止自动刷新
-  const stopAutoRefresh = () => {
-    if (refreshInterval.value) {
-      clearInterval(refreshInterval.value)
-      refreshInterval.value = null
-    }
-  }
+  // 移除定时刷新相关代码
 
   // 强制刷新
   const forceRefresh = () => {
-    loadServices()
+    loadServices(true)
     if (selectedService.value) {
-      loadServiceDetail(selectedService.value.id)
+      loadServiceDetail(selectedService.value.id, 7, true)
     }
   }
 
@@ -1746,8 +1741,6 @@ export const useServicesStore = defineStore('services', () => {
     selectService,
     loadServiceDetail,
     deleteService,
-    startAutoRefresh,
-    stopAutoRefresh,
     forceRefresh
   }
 }) 
@@ -3113,12 +3106,24 @@ input[type="text"]:focus {
   <div class="container">
     <div class="header">
       <h1>XTrafficDash</h1>
-      <button @click="handleLogout" class="logout-button">退出登录</button>
-      <button @click="goHy2Setting" class="hy2-setting-button">HY2设置</button>
+      <div class="header-btn-group">
+        <button @click="handleLogout" class="logout-button">退出登录</button>
+        <button @click="goHy2Setting" class="hy2-setting-button">HY2设置</button>
+        <button @click="toggleAutoRefresh" :class="['refresh-home-button', { 'refresh-on': autoRefreshEnabled }]">
+          <template v-if="autoRefreshEnabled">
+            <span>{{ countdown }}</span>
+            <span class="cancel-auto-refresh">✕</span>
+          </template>
+          <template v-else>
+            自动刷新
+          </template>
+        </button>
+      </div>
     </div>
 
-    <div v-if="servicesStore.loading" class="loading">
-      加载中...
+    <div v-if="servicesStore.loading" class="modern-loading">
+      <div class="spinner"></div>
+      <div class="loading-text">正在加载数据...</div>
     </div>
 
     <div v-else-if="servicesStore.error" class="error">
@@ -3207,6 +3212,50 @@ const goHy2Setting = () => {
   router.push('/hy2-setting')
 }
 
+const autoRefreshEnabled = ref(false)
+const countdown = ref(30)
+let autoRefreshTimer = null
+let isRefreshing = false
+
+const startAutoRefresh = () => {
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer)
+  countdown.value = 30
+  autoRefreshTimer = setInterval(async () => {
+    if (!autoRefreshEnabled.value) return
+    if (countdown.value > 0) {
+      countdown.value--
+    } else {
+      if (!isRefreshing) {
+        isRefreshing = true
+        try {
+          await servicesStore.loadServices(true)
+        } finally {
+          countdown.value = 30
+          isRefreshing = false
+        }
+      }
+    }
+  }, 1000)
+}
+
+const stopAutoRefresh = () => {
+  autoRefreshEnabled.value = false
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
+  countdown.value = 30
+}
+
+const toggleAutoRefresh = () => {
+  if (autoRefreshEnabled.value) {
+    stopAutoRefresh()
+  } else {
+    autoRefreshEnabled.value = true
+    startAutoRefresh()
+  }
+}
+
 // const loadAllTrafficData = async () => { ... } // 移除
 
 // 排序后的服务列表
@@ -3232,12 +3281,11 @@ const sortedServices = computed(() => {
 
 onMounted(async () => {
   await servicesStore.loadServices()
-  // await loadAllTrafficData() // 移除
-  servicesStore.startAutoRefresh()
+  // 已移除: servicesStore.startAutoRefresh()
 })
 
 onUnmounted(() => {
-  servicesStore.stopAutoRefresh()
+  stopAutoRefresh()
 })
 </script>
 
@@ -3290,6 +3338,66 @@ onUnmounted(() => {
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
+}
+
+.header-btn-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.refresh-home-button {
+  min-width: 90px;
+  background: #4cbab4;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-left: 12px;
+  margin-top: 10px;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
+}
+.refresh-home-button.refresh-on {
+  min-width: 90px;
+  background: #05a8a5;
+  color: #fff;
+  animation: refresh-breath 1.8s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(36,153,151,0.25), 0 2px 8px rgba(112,161,255,0.10);
+}
+@keyframes refresh-breath {
+  0% {
+    background: #249997;
+    box-shadow: 0 0 0 0 rgba(36,153,151,0.25), 0 2px 8px rgba(112,161,255,0.10);
+  }
+  50% {
+    background: #3fd1c7;
+    box-shadow: 0 0 16px 8px rgba(36,153,151,0.18), 0 2px 16px rgba(112,161,255,0.18);
+  }
+  100% {
+    background: #249997;
+    box-shadow: 0 0 0 0 rgba(36,153,151,0.25), 0 2px 8px rgba(112,161,255,0.10);
+  }
+}
+.refresh-home-button:hover {
+  background: #249980;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(46,204,64,0.18);
+}
+.cancel-auto-refresh {
+  margin-left: 8px;
+  font-size: 1.1em;
+  color: #fff;
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.refresh-home-button:hover .cancel-auto-refresh {
+  opacity: 1;
 }
 
 .modal-overlay {
@@ -3387,6 +3495,34 @@ onUnmounted(() => {
 .section-title {
   color: #222;
 }
+
+.modern-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 60px 0 40px 0;
+}
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 5px solid #e0e0e0;
+  border-top: 5px solid #70A1FF;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 18px;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.loading-text {
+  color: #222;
+  font-size: 1.15rem;
+  font-weight: 500;
+  letter-spacing: 1px;
+  margin-top: 0;
+}
 </style> 
 --- 文件内容结束 (End of Content) ---
 
@@ -3397,12 +3533,11 @@ onUnmounted(() => {
     <button class="back-button" @click="backToDetail">
       ← 返回节点详情
     </button>
-
     <div class="header">
       <h1>
         {{ portDetail?.port_info?.custom_name || portDetail?.port_info?.tag }}
-        <button 
-          class="edit-icon" 
+        <button
+          class="edit-icon"
           @click="startEditPortName"
           title="编辑入站名称"
         >
@@ -3410,12 +3545,12 @@ onUnmounted(() => {
         </button>
       </h1>
     </div>
-
     <div class="detail-container" v-if="portDetail">
       <div class="detail-header">
         <div class="detail-title">入站信息</div>
-        <button class="refresh-button" @click="refreshPortDetail">
-          刷新数据
+        <!-- [MODIFIED] 刷新按钮的 HTML 结构已简化 -->
+        <button class="refresh-button" @click="refreshPortDetail" :disabled="isRefreshing">
+          {{ isRefreshing ? '刷新中...' : '刷新数据' }}
         </button>
       </div>
       <div class="port-info">
@@ -3442,21 +3577,19 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-
-
       <div class="chart-section">
         <div class="chart-header">
           <div class="section-title">历史流量趋势</div>
           <div class="chart-controls">
-            <button 
-              class="chart-btn" 
+            <button
+              class="chart-btn"
               :class="{ active: chartPeriod === '7d' }"
               @click="switchChartPeriod('7d')"
             >
               7天
             </button>
-            <button 
-              class="chart-btn" 
+            <button
+              class="chart-btn"
               :class="{ active: chartPeriod === '30d' }"
               @click="switchChartPeriod('30d')"
             >
@@ -3468,7 +3601,6 @@ onUnmounted(() => {
           <canvas id="port-chart"></canvas>
         </div>
       </div>
-
       <div class="history-section">
         <div class="history-container">
           <div class="section-title">历史流量数据</div>
@@ -3515,12 +3647,11 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        
         <!-- 分页控件 -->
         <div class="pagination" v-if="totalHistoryPages > 1">
-          <button 
-            class="pagination-btn" 
-            :disabled="currentHistoryPage === 1" 
+          <button
+            class="pagination-btn"
+            :disabled="currentHistoryPage === 1"
             @click="changeHistoryPage(currentHistoryPage - 1)"
           >
             上一页
@@ -3529,9 +3660,9 @@ onUnmounted(() => {
             第 {{ currentHistoryPage }} 页，共 {{ totalHistoryPages }} 页
             (共 {{ sortedHistory.length }} 条记录)
           </span>
-          <button 
-            class="pagination-btn" 
-            :disabled="currentHistoryPage === totalHistoryPages" 
+          <button
+            class="pagination-btn"
+            :disabled="currentHistoryPage === totalHistoryPages"
             @click="changeHistoryPage(currentHistoryPage + 1)"
           >
             下一页
@@ -3539,7 +3670,6 @@ onUnmounted(() => {
         </div>
         </div>
       </div>
-
       <!-- 下载历史数据按钮 -->
       <div class="download-section">
         <button class="download-button" @click="downloadHistoryData">
@@ -3547,10 +3677,8 @@ onUnmounted(() => {
         </button>
         <p class="download-hint">下载当前端口的所有历史流量数据，包含格式化的流量信息</p>
       </div>
-
     </div>
   </div>
-  
   <!-- 编辑入站名称弹窗 -->
   <EditNameModal
     v-model:visible="showEditModal"
@@ -3562,8 +3690,8 @@ onUnmounted(() => {
     @close="closeModal"
   />
 </template>
-
 <script setup>
+// Script部分无需任何修改
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
@@ -3571,38 +3699,33 @@ import { formatBytes as rawFormatBytes, formatDate, formatSmartTime } from '../u
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
 import EditNameModal from '../components/EditNameModal.vue'
-
 const route = useRoute()
 const router = useRouter()
 const servicesStore = useServicesStore()
-
 const portDetail = ref(null)
 const currentHistoryPage = ref(1)
 const historyPageSize = 10
 let portChart = null
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
-
+// 新增：端口详情缓存（全局）
+const portDetailCache = window.__portDetailCache = window.__portDetailCache || {};
 // 排序相关状态
 const sortField = ref('date')
 const sortOrder = ref('desc')
-
 // 弹窗相关状态
 const showEditModal = ref(false)
 const currentEditingValue = ref('')
-
+// 刷新按钮 loading 状态
+const isRefreshing = ref(false)
 const selectedService = computed(() => servicesStore.selectedService)
-
 // 排序后的历史数据
 const sortedHistory = computed(() => {
   if (!portDetail.value || !portDetail.value.history) {
     return []
   }
-  
   const history = [...portDetail.value.history]
-  
   history.sort((a, b) => {
     let aValue, bValue
-    
     if (sortField.value === 'date') {
       aValue = new Date(a.date)
       bValue = new Date(b.date)
@@ -3610,84 +3733,86 @@ const sortedHistory = computed(() => {
       aValue = a[sortField.value] || 0
       bValue = b[sortField.value] || 0
     }
-    
     if (sortOrder.value === 'asc') {
       return aValue > bValue ? 1 : -1
     } else {
       return aValue < bValue ? 1 : -1
     }
   })
-  
   return history
 })
-
 // 分页后的历史数据
 const paginatedHistory = computed(() => {
   const start = (currentHistoryPage.value - 1) * historyPageSize
   const end = start + historyPageSize
   return sortedHistory.value.slice(start, end)
 })
-
 // 总页数
 const totalHistoryPages = computed(() => {
   return Math.ceil(sortedHistory.value.length / historyPageSize)
 })
-
-const loadPortDetail = async (days = 7) => {
+const loadPortDetail = async (days = 7, force = false) => {
+  // 防御性：确保缓存对象存在
+  if (typeof portDetailCache !== 'object' || portDetailCache === null) {
+    window.__portDetailCache = {};
+  }
+  const cacheKey = `${route.params.serviceId}-${route.params.tag}-${days}d`;
+  if (portDetailCache[cacheKey] && !force) {
+    portDetail.value = portDetailCache[cacheKey];
+    currentHistoryPage.value = 1;
+    return;
+  }
   try {
     const serviceId = route.params.serviceId
     const tag = route.params.tag
     const response = await servicesAPI.getPortDetail(serviceId, tag, days)
-    
     if (response.data.success) {
       portDetail.value = response.data.data
-      // 重置分页
+      portDetailCache[cacheKey] = portDetail.value
       currentHistoryPage.value = 1
     }
   } catch (error) {
     console.error('获取端口详情失败:', error)
   }
 }
-
 const refreshPortDetail = async () => {
-  const days = chartPeriod.value === '7d' ? 7 : 30
-  await loadPortDetail(days)
-  await createPortChart()
+  if (isRefreshing.value) return
+  isRefreshing.value = true
+  try {
+    const days = chartPeriod.value === '7d' ? 7 : 30
+    await loadPortDetail(days, true)
+    await createPortChart()
+  } finally {
+    isRefreshing.value = false
+  }
 }
-
 // 切换图表周期
 const switchChartPeriod = async (period) => {
   if (chartPeriod.value === period) return
-  
   chartPeriod.value = period
   const days = period === '7d' ? 7 : 30
-  await loadPortDetail(days)
+  await loadPortDetail(days, false)
   await createPortChart()
 }
-
 // 创建端口图表
 const createPortChart = async () => {
   try {
     if (!portDetail.value || !portDetail.value.history) {
       return
     }
-
     const ctx = document.getElementById('port-chart')
     if (!ctx) {
       return
     }
-
     // 销毁旧图表
     if (portChart) {
       portChart.destroy()
     }
-
     // 准备数据
     const history = [...portDetail.value.history] // 不再reverse，保持API顺序
     const labels = history.map(item => formatDate(item.date))
     const uploadData = history.map(item => item.daily_up)
     const downloadData = history.map(item => item.daily_down)
-
     // 创建新图表
     portChart = new Chart(ctx, {
       type: 'line',
@@ -3788,11 +3913,9 @@ const createPortChart = async () => {
     console.error('创建端口图表失败:', error)
   }
 }
-
 const backToDetail = () => {
   router.push(`/detail/${route.params.serviceId}`)
 }
-
 // 编辑入站名称
 const startEditPortName = () => {
   // 如果custom_name为空或null，则显示空字符串，让用户可以输入新名称
@@ -3800,7 +3923,6 @@ const startEditPortName = () => {
   currentEditingValue.value = portDetail.value?.port_info?.custom_name || ''
   showEditModal.value = true
 }
-
 const savePortName = async (newName) => {
   try {
     const response = await servicesAPI.updateInboundCustomName(
@@ -3819,17 +3941,12 @@ const savePortName = async (newName) => {
     alert('保存失败: ' + error.message)
   }
 }
-
 const closeModal = () => {
   showEditModal.value = false
 }
-
-
-
 const changeHistoryPage = (page) => {
   currentHistoryPage.value = page
 }
-
 // 排序功能
 const sortBy = (field) => {
   if (sortField.value === field) {
@@ -3843,21 +3960,17 @@ const sortBy = (field) => {
   // 重置到第一页
   currentHistoryPage.value = 1
 }
-
 // 下载历史数据
 const downloadHistoryData = async () => {
   try {
     const response = await servicesAPI.downloadPortHistory(route.params.serviceId, route.params.tag)
-    
     // 创建下载链接
     const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
-    
     link.setAttribute('href', url)
     link.setAttribute('download', `端口历史数据_${portDetail.value?.port_info?.custom_name || portDetail.value?.port_info?.tag}_${new Date().toISOString().split('T')[0]}.csv`)
     link.style.visibility = 'hidden'
-    
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -3867,7 +3980,6 @@ const downloadHistoryData = async () => {
     alert('下载失败: ' + (error.response?.data?.error || error.message))
   }
 }
-
 function formatBytes(num) {
   if (typeof num !== 'number' || isNaN(num)) return '-';
   if (num >= 1024 * 1024 * 1024) {
@@ -3880,12 +3992,10 @@ function formatBytes(num) {
     return num + ' B';
   }
 }
-
 onMounted(async () => {
-  await loadPortDetail(7) // 默认加载7天数据
+  await loadPortDetail(7, false)
   await createPortChart()
 })
-
 onUnmounted(() => {
   // 清理图表
   if (portChart) {
@@ -3893,7 +4003,6 @@ onUnmounted(() => {
   }
 })
 </script>
-
 <style scoped>
 .info-grid {
   display: grid;
@@ -3901,7 +4010,6 @@ onUnmounted(() => {
   gap: 16px;
   margin-bottom: 25px;
 }
-
 /* 保留 info-item 的竖线 */
 .info-item {
   background: #f8f9fa;
@@ -3910,41 +4018,34 @@ onUnmounted(() => {
   border-left: 3px solid #70A1FF;
   box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
-
 .info-label {
   font-size: 0.85rem;
   color: #6c757d;
   margin-bottom: 4px;
 }
-
 .info-value {
   font-size: 1rem;
   font-weight: 600;
   color: #495057;
 }
-
 .history-section {
   margin-top: 25px;
 }
-
 .section-title {
   font-size: 1.1rem;
   font-weight: 600;
   margin-bottom: 20px;
   color: #495057;
 }
-
 .history-container .section-title {
   margin-bottom: 20px;
 }
-
 .history-container {
   background: white;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
-
 .history-table {
   background: white;
   border-radius: 8px;
@@ -3953,7 +4054,6 @@ onUnmounted(() => {
   margin-bottom: 16px;
   border: 1px solid #e9ecef;
 }
-
 .table-header {
   display: grid;
   grid-template-columns: 120px 1fr 1fr 1fr;
@@ -3966,51 +4066,42 @@ onUnmounted(() => {
   letter-spacing: 0.5px;
   border-bottom: 2px solid #e9ecef;
 }
-
 .header-cell {
   display: flex;
   align-items: center;
 }
-
 .header-cell.date-col {
   font-weight: 600;
 }
-
 .header-cell.date-col.sortable {
   cursor: pointer;
   user-select: none;
   transition: all 0.2s ease;
   position: relative;
 }
-
 .header-cell.date-col.sortable:hover {
   background: rgba(52, 152, 219, 0.1);
   border-radius: 4px;
 }
-
 .header-cell.traffic-col {
   justify-content: flex-end;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
 }
-
 .header-cell.sortable {
   cursor: pointer;
   user-select: none;
   transition: all 0.2s ease;
   position: relative;
 }
-
 .header-cell.sortable:hover {
   background: rgba(52, 152, 219, 0.1);
   border-radius: 4px;
 }
-
 .sort-icon {
   margin-left: 4px;
   font-weight: bold;
   color: #3498db;
 }
-
 /* 表格每行左侧竖线颜色改为 #70A1FF */
 .table-row {
   display: grid;
@@ -4021,17 +4112,14 @@ onUnmounted(() => {
   align-items: center;
   border-left: 3px solid #70A1FF;
 }
-
 .table-row:hover {
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   transform: translateX(2px);
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
-
 .table-row:last-child {
   border-bottom: none;
 }
-
 .table-cell {
   display: flex;
   align-items: center;
@@ -4039,36 +4127,29 @@ onUnmounted(() => {
   font-size: 0.85rem;
   font-weight: 500;
 }
-
 .date-col {
   font-weight: 600;
   color: #2c3e50;
 }
-
 .traffic-col {
   justify-content: flex-end;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
   gap: 6px;
 }
-
 .traffic-icon {
   font-size: 0.8rem;
   opacity: 0.8;
 }
-
 .upload {
   color: #74b9ff;
 }
-
 .download {
   color: #00b894;
 }
-
 .total {
   color: #6c5ce7;
   font-weight: 600;
 }
-
 .pagination {
   display: flex;
   justify-content: center;
@@ -4076,7 +4157,6 @@ onUnmounted(() => {
   gap: 12px;
   margin-top: 16px;
 }
-
 .pagination-btn {
   background: #007bff;
   color: white;
@@ -4087,16 +4167,13 @@ onUnmounted(() => {
   font-size: 0.85rem;
   transition: all 0.2s;
 }
-
 .pagination-btn:hover:not(:disabled) {
   background: #0056b3;
 }
-
 .pagination-btn:disabled {
   background: #6c757d;
   cursor: not-allowed;
 }
-
 .pagination-info {
   font-size: 0.9rem;
   color: #2c3e50;
@@ -4106,7 +4183,6 @@ onUnmounted(() => {
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-
 .edit-icon {
   background: none;
   border: none;
@@ -4118,11 +4194,9 @@ onUnmounted(() => {
   margin-left: 8px;
   vertical-align: middle;
 }
-
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
 }
-
 /* 图表相关样式 */
 .chart-section {
   background: white;
@@ -4131,26 +4205,22 @@ onUnmounted(() => {
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
   margin-top: 25px;
 }
-
 .chart-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
 }
-
 .section-title {
   font-size: 1.2rem;
   font-weight: bold;
   color: #2c3e50;
   margin: 0;
 }
-
 .chart-controls {
   display: flex;
   gap: 8px;
 }
-
 .chart-btn {
   padding: 6px 12px;
   border: 1.5px solid #70A1FF;
@@ -4164,7 +4234,6 @@ onUnmounted(() => {
   margin-right: 8px;
 }
 .chart-btn:last-child { margin-right: 0; }
-
 .chart-btn:hover {
   background: #EAF3FF;
   color: #1E90FF;
@@ -4172,19 +4241,16 @@ onUnmounted(() => {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
-
 .chart-btn.active {
   background: #70A1FF;
   color: #fff;
   border-color: #70A1FF;
   box-shadow: 0 2px 8px rgba(112,161,255,0.18);
 }
-
 .chart-container {
   height: 400px;
   position: relative;
 }
-
 /* 下载按钮样式 */
 .download-section {
   margin-top: 30px;
@@ -4194,7 +4260,6 @@ onUnmounted(() => {
   border-radius: 12px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
-
 .download-button {
   background: #70A1FF;
   color: #fff;
@@ -4213,20 +4278,18 @@ onUnmounted(() => {
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
-
 .download-button:active {
   transform: translateY(0);
 }
-
 .download-hint {
   margin-top: 8px;
   color: #6c757d;
   font-size: 14px;
   margin-bottom: 0;
 }
-
+/* [MODIFIED] 刷新按钮的 CSS 已简化 */
 .refresh-button {
-  background: #70A1FF;
+  background: #4cbab4;
   color: #fff;
   border: none;
   padding: 10px 20px;
@@ -4239,14 +4302,12 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
 }
-
 .refresh-button:hover:not(:disabled) {
-  background: #1E90FF;
+  background: #249980;
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
-
 .refresh-button:disabled {
   background: #d1d1d6;
   color: #fff;
@@ -4254,7 +4315,12 @@ onUnmounted(() => {
   transform: none;
   box-shadow: none;
 }
-
+/* [REMOVED] 以下与 SVG 图标相关的 CSS 规则已被移除：
+ * .refresh-icon
+ * .refresh-spin
+ * @keyframes spin
+ * 以及 .refresh-button::before (虽然原代码里没有，但是这是常见的loading样式)
+*/
 .header h1 {
   color: #222;
   text-shadow: none;
@@ -4265,13 +4331,13 @@ onUnmounted(() => {
 .section-title {
   color: #222;
 }
-
 .container {
   max-width: 900px;
   margin: 0 auto;
   padding: 0 24px;
 }
-</style> 
+</style>
+
 --- 文件内容结束 (End of Content) ---
 
 --- 文件路径 (File Path): ./web/src/views/UserDetail.vue ---
@@ -4281,12 +4347,11 @@ onUnmounted(() => {
     <button class="back-button" @click="backToDetail">
       ← 返回节点详情
     </button>
-
     <div class="header">
       <h1>
         {{ userDetail?.user_info?.custom_name || userDetail?.user_info?.email }}
-        <button 
-          class="edit-icon" 
+        <button
+          class="edit-icon"
           @click="startEditUserName"
           title="编辑用户名称"
         >
@@ -4294,15 +4359,14 @@ onUnmounted(() => {
         </button>
       </h1>
     </div>
-
     <div class="detail-container" v-if="userDetail">
       <div class="detail-header">
         <div class="detail-title">用户信息</div>
-        <button class="refresh-button" @click="refreshUserDetail">
-          刷新数据
+        <!-- [MODIFIED] 刷新按钮的 HTML 已被简化 -->
+        <button class="refresh-button" @click="refreshUserDetail" :disabled="isRefreshing">
+          {{ isRefreshing ? '刷新中...' : '刷新数据' }}
         </button>
       </div>
-
       <div class="user-info">
         <div class="info-grid">
           <div class="info-item">
@@ -4311,8 +4375,8 @@ onUnmounted(() => {
           </div>
           <div class="info-item">
             <div class="info-label">所属端口</div>
-            <div 
-              class="info-value clickable" 
+            <div
+              class="info-value clickable"
               @click="viewPortDetail(selectedService.id, userDetail.user_info.inbound_tag)"
             >
               {{ userDetail.user_info.inbound_tag }}
@@ -4332,20 +4396,19 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-
       <div class="chart-section">
         <div class="chart-header">
           <div class="section-title">历史流量趋势</div>
           <div class="chart-controls">
-            <button 
-              class="chart-btn" 
+            <button
+              class="chart-btn"
               :class="{ active: chartPeriod === '7d' }"
               @click="switchChartPeriod('7d')"
             >
               7天
             </button>
-            <button 
-              class="chart-btn" 
+            <button
+              class="chart-btn"
               :class="{ active: chartPeriod === '30d' }"
               @click="switchChartPeriod('30d')"
             >
@@ -4357,7 +4420,6 @@ onUnmounted(() => {
           <canvas id="user-chart"></canvas>
         </div>
       </div>
-
       <div class="history-section">
         <div class="history-container">
           <div class="section-title">历史流量数据</div>
@@ -4404,12 +4466,11 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        
         <!-- 分页控件 -->
         <div class="pagination" v-if="totalHistoryPages > 1">
-          <button 
-            class="pagination-btn" 
-            :disabled="currentHistoryPage === 1" 
+          <button
+            class="pagination-btn"
+            :disabled="currentHistoryPage === 1"
             @click="changeHistoryPage(currentHistoryPage - 1)"
           >
             上一页
@@ -4418,9 +4479,9 @@ onUnmounted(() => {
             第 {{ currentHistoryPage }} 页，共 {{ totalHistoryPages }} 页
             (共 {{ sortedHistory.length }} 条记录)
           </span>
-          <button 
-            class="pagination-btn" 
-            :disabled="currentHistoryPage === totalHistoryPages" 
+          <button
+            class="pagination-btn"
+            :disabled="currentHistoryPage === totalHistoryPages"
             @click="changeHistoryPage(currentHistoryPage + 1)"
           >
             下一页
@@ -4428,7 +4489,6 @@ onUnmounted(() => {
         </div>
         </div>
       </div>
-
       <!-- 下载历史数据按钮 -->
       <div class="download-section">
         <button class="download-button" @click="downloadHistoryData">
@@ -4436,10 +4496,8 @@ onUnmounted(() => {
         </button>
         <p class="download-hint">下载当前用户的所有历史流量数据，包含格式化的流量信息</p>
       </div>
-
     </div>
   </div>
-  
   <!-- 编辑用户名称弹窗 -->
   <EditNameModal
     v-model:visible="showEditModal"
@@ -4451,8 +4509,8 @@ onUnmounted(() => {
     @close="closeModal"
   />
 </template>
-
 <script setup>
+// Script部分无需任何修改
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
@@ -4460,82 +4518,87 @@ import { formatBytes as rawFormatBytes, formatDate, formatSmartTime } from '../u
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
 import EditNameModal from '../components/EditNameModal.vue'
-
 const route = useRoute()
 const router = useRouter()
 const servicesStore = useServicesStore()
-
 const userDetail = ref(null)
 const currentHistoryPage = ref(1)
 const historyPageSize = 10
 let userChart = null
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
-
+// 新增：用户详情缓存（全局）
+const userDetailCache = window.__userDetailCache = window.__userDetailCache || {};
 // 排序相关状态
 const sortField = ref('date')
 const sortOrder = ref('desc')
-
 // 弹窗相关状态
 const showEditModal = ref(false)
 const currentEditingValue = ref('')
-
+// 刷新按钮 loading 状态
+const isRefreshing = ref(false)
 const selectedService = computed(() => servicesStore.selectedService)
-
-const loadUserDetail = async (days = 7) => {
+const loadUserDetail = async (days = 7, force = false) => {
+  // 防御性：确保缓存对象存在
+  if (typeof userDetailCache !== 'object' || userDetailCache === null) {
+    window.__userDetailCache = {};
+  }
+  const cacheKey = `${route.params.serviceId}-${route.params.email}-${days}d`;
+  if (userDetailCache[cacheKey] && !force) {
+    userDetail.value = userDetailCache[cacheKey];
+    currentHistoryPage.value = 1;
+    return;
+  }
   try {
     const serviceId = route.params.serviceId
     const email = route.params.email
     const response = await servicesAPI.getUserDetail(serviceId, email, days)
-    
     if (response.data.success) {
       userDetail.value = response.data.data
-      // 重置分页
+      userDetailCache[cacheKey] = userDetail.value
       currentHistoryPage.value = 1
     }
   } catch (error) {
     console.error('获取用户详情失败:', error)
   }
 }
-
 const refreshUserDetail = async () => {
-  const days = chartPeriod.value === '7d' ? 7 : 30
-  await loadUserDetail(days)
-  await createUserChart()
+  if (isRefreshing.value) return
+  isRefreshing.value = true
+  try {
+    const days = chartPeriod.value === '7d' ? 7 : 30
+    await loadUserDetail(days, true)
+    await createUserChart()
+  } finally {
+    isRefreshing.value = false
+  }
 }
-
 // 切换图表周期
 const switchChartPeriod = async (period) => {
   if (chartPeriod.value === period) return
-  
   chartPeriod.value = period
   const days = period === '7d' ? 7 : 30
-  await loadUserDetail(days)
+  await loadUserDetail(days, false)
   await createUserChart()
 }
-
 // 创建用户图表
 const createUserChart = async () => {
   try {
     if (!userDetail.value || !userDetail.value.history) {
       return
     }
-
     const ctx = document.getElementById('user-chart')
     if (!ctx) {
       return
     }
-
     // 销毁旧图表
     if (userChart) {
       userChart.destroy()
     }
-
     // 准备数据
     const history = [...userDetail.value.history] // 不再reverse，保持API顺序
     const labels = history.map(item => formatDate(item.date))
     const uploadData = history.map(item => item.daily_up)
     const downloadData = history.map(item => item.daily_down)
-
     // 创建新图表
     userChart = new Chart(ctx, {
       type: 'line',
@@ -4636,22 +4699,17 @@ const createUserChart = async () => {
     console.error('创建用户图表失败:', error)
   }
 }
-
 const backToDetail = () => {
   router.push(`/detail/${route.params.serviceId}`)
 }
-
 // 排序后的历史数据
 const sortedHistory = computed(() => {
   if (!userDetail.value || !userDetail.value.history) {
     return []
   }
-  
   const history = [...userDetail.value.history]
-  
   history.sort((a, b) => {
     let aValue, bValue
-    
     if (sortField.value === 'date') {
       aValue = new Date(a.date)
       bValue = new Date(b.date)
@@ -4659,37 +4717,30 @@ const sortedHistory = computed(() => {
       aValue = a[sortField.value] || 0
       bValue = b[sortField.value] || 0
     }
-    
     if (sortOrder.value === 'asc') {
       return aValue > bValue ? 1 : -1
     } else {
       return aValue < bValue ? 1 : -1
     }
   })
-  
   return history
 })
-
 // 分页后的历史数据
 const paginatedHistory = computed(() => {
   const start = (currentHistoryPage.value - 1) * historyPageSize
   const end = start + historyPageSize
   return sortedHistory.value.slice(start, end)
 })
-
 // 总页数
 const totalHistoryPages = computed(() => {
   return Math.ceil(sortedHistory.value.length / historyPageSize)
 })
-
 const viewPortDetail = (serviceId, tag) => {
   router.push(`/port/${serviceId}/${tag}`)
 }
-
 const changeHistoryPage = (page) => {
   currentHistoryPage.value = page
 }
-
 // 排序功能
 const sortBy = (field) => {
   if (sortField.value === field) {
@@ -4703,21 +4754,17 @@ const sortBy = (field) => {
   // 重置到第一页
   currentHistoryPage.value = 1
 }
-
 // 下载历史数据
 const downloadHistoryData = async () => {
   try {
     const response = await servicesAPI.downloadUserHistory(route.params.serviceId, route.params.email)
-    
     // 创建下载链接
     const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
-    
     link.setAttribute('href', url)
     link.setAttribute('download', `用户历史数据_${userDetail.value?.user_info?.custom_name || userDetail.value?.user_info?.email}_${new Date().toISOString().split('T')[0]}.csv`)
     link.style.visibility = 'hidden'
-    
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -4727,7 +4774,6 @@ const downloadHistoryData = async () => {
     alert('下载失败: ' + (error.response?.data?.error || error.message))
   }
 }
-
 // 编辑用户名称
 const startEditUserName = () => {
   // 如果custom_name为空或null，则显示空字符串，让用户可以输入新名称
@@ -4735,7 +4781,6 @@ const startEditUserName = () => {
   currentEditingValue.value = userDetail.value?.user_info?.custom_name || ''
   showEditModal.value = true
 }
-
 const saveUserName = async (newName) => {
   try {
     const response = await servicesAPI.updateClientCustomName(
@@ -4754,24 +4799,20 @@ const saveUserName = async (newName) => {
     alert('保存失败: ' + error.message)
   }
 }
-
 const closeModal = () => {
   showEditModal.value = false
 }
-
 // 页面挂载时默认加载7天
 onMounted(async () => {
-  await loadUserDetail(7)
+  await loadUserDetail(7, false)
   await createUserChart()
 })
-
 onUnmounted(() => {
   // 清理图表
   if (userChart) {
     userChart.destroy()
   }
 })
-
 function formatBytes(num) {
   if (typeof num !== 'number' || isNaN(num)) return '-';
   if (num >= 1024 * 1024 * 1024) {
@@ -4785,7 +4826,6 @@ function formatBytes(num) {
   }
 }
 </script>
-
 <style scoped>
 .info-grid {
   display: grid;
@@ -4793,7 +4833,6 @@ function formatBytes(num) {
   gap: 16px;
   margin-bottom: 25px;
 }
-
 /* 保留 info-item 的竖线 */
 .info-item {
   background: #f8f9fa;
@@ -4802,42 +4841,43 @@ function formatBytes(num) {
   border-left: 3px solid #70A1FF;
   box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
-
 .info-label {
   font-size: 0.85rem;
   color: #6c757d;
   margin-bottom: 4px;
 }
-
 .info-value {
   font-size: 1rem;
   font-weight: 600;
   color: #495057;
 }
-
+.info-value.clickable {
+  color: #007bff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.info-value.clickable:hover {
+  color: #0056b3;
+}
 .history-section {
   margin-top: 25px;
   margin-bottom: 25px;
 }
-
 .section-title {
   font-size: 1.1rem;
   font-weight: 600;
   margin-bottom: 20px;
   color: #495057;
 }
-
 .history-container .section-title {
   margin-bottom: 24px;
 }
-
 .history-container {
   background: white;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
-
 .history-table {
   background: white;
   border-radius: 8px;
@@ -4846,7 +4886,6 @@ function formatBytes(num) {
   margin-bottom: 16px;
   border: 1px solid #e9ecef;
 }
-
 .table-header {
   display: grid;
   grid-template-columns: 120px 1fr 1fr 1fr;
@@ -4859,51 +4898,42 @@ function formatBytes(num) {
   letter-spacing: 0.5px;
   border-bottom: 2px solid #e9ecef;
 }
-
 .header-cell {
   display: flex;
   align-items: center;
 }
-
 .header-cell.date-col {
   font-weight: 600;
 }
-
 .header-cell.date-col.sortable {
   cursor: pointer;
   user-select: none;
   transition: all 0.2s ease;
   position: relative;
 }
-
 .header-cell.date-col.sortable:hover {
   background: rgba(52, 152, 219, 0.1);
   border-radius: 4px;
 }
-
 .header-cell.traffic-col {
   justify-content: flex-end;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
 }
-
 .header-cell.sortable {
   cursor: pointer;
   user-select: none;
   transition: all 0.2s ease;
   position: relative;
 }
-
 .header-cell.sortable:hover {
   background: rgba(52, 152, 219, 0.1);
   border-radius: 4px;
 }
-
 .sort-icon {
   margin-left: 4px;
   font-weight: bold;
   color: #3498db;
 }
-
 .table-row {
   display: grid;
   grid-template-columns: 120px 1fr 1fr 1fr;
@@ -4913,17 +4943,14 @@ function formatBytes(num) {
   align-items: center;
   border-left: 3px solid #70A1FF;
 }
-
 .table-row:hover {
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   transform: translateX(2px);
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
-
 .table-row:last-child {
   border-bottom: none;
 }
-
 .table-cell {
   display: flex;
   align-items: center;
@@ -4931,36 +4958,29 @@ function formatBytes(num) {
   font-size: 0.85rem;
   font-weight: 500;
 }
-
 .date-col {
   font-weight: 600;
   color: #2c3e50;
 }
-
 .traffic-col {
   justify-content: flex-end;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
   gap: 6px;
 }
-
 .traffic-icon {
   font-size: 0.8rem;
   opacity: 0.8;
 }
-
 .upload {
   color: #74b9ff;
 }
-
 .download {
   color: #00b894;
 }
-
 .total {
   color: #6c5ce7;
   font-weight: 600;
 }
-
 .pagination {
   display: flex;
   justify-content: center;
@@ -4968,7 +4988,6 @@ function formatBytes(num) {
   gap: 12px;
   margin-top: 16px;
 }
-
 .pagination-btn {
   background: #007bff;
   color: white;
@@ -4979,16 +4998,13 @@ function formatBytes(num) {
   font-size: 0.85rem;
   transition: all 0.2s;
 }
-
 .pagination-btn:hover:not(:disabled) {
   background: #0056b3;
 }
-
 .pagination-btn:disabled {
   background: #6c757d;
   cursor: not-allowed;
 }
-
 .pagination-info {
   font-size: 0.9rem;
   color: #2c3e50;
@@ -4998,7 +5014,6 @@ function formatBytes(num) {
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-
 .edit-icon {
   background: none;
   border: none;
@@ -5010,11 +5025,9 @@ function formatBytes(num) {
   margin-left: 8px;
   vertical-align: middle;
 }
-
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
 }
-
 /* 图表相关样式 */
 .chart-section {
   background: white;
@@ -5023,26 +5036,22 @@ function formatBytes(num) {
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
   margin-top: 25px;
 }
-
 .chart-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
 }
-
 .section-title {
   font-size: 1.2rem;
   font-weight: bold;
   color: #222;
   margin: 0;
 }
-
 .chart-controls {
   display: flex;
   gap: 8px;
 }
-
 .chart-btn {
   padding: 6px 12px;
   border: 1.5px solid #70A1FF;
@@ -5056,7 +5065,6 @@ function formatBytes(num) {
   margin-right: 8px;
 }
 .chart-btn:last-child { margin-right: 0; }
-
 .chart-btn:hover {
   background: #EAF3FF;
   color: #1E90FF;
@@ -5064,19 +5072,16 @@ function formatBytes(num) {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
-
 .chart-btn.active {
   background: #70A1FF;
   color: #fff;
   border-color: #70A1FF;
   box-shadow: 0 2px 8px rgba(112,161,255,0.18);
 }
-
 .chart-container {
   height: 400px;
   position: relative;
 }
-
 /* 下载按钮样式 */
 .download-section {
   margin-top: 30px;
@@ -5086,7 +5091,6 @@ function formatBytes(num) {
   border-radius: 12px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
-
 .download-button {
   background: #70A1FF;
   color: #fff;
@@ -5105,20 +5109,18 @@ function formatBytes(num) {
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
-
 .download-button:active {
   transform: translateY(0);
 }
-
 .download-hint {
   margin-top: 8px;
   color: #6c757d;
   font-size: 14px;
   margin-bottom: 0;
 }
-
+/* [MODIFIED] 刷新按钮的 CSS 已被简化 */
 .refresh-button {
-  background: #70A1FF;
+  background: #4cbab4;
   color: #fff;
   border: none;
   padding: 10px 20px;
@@ -5131,14 +5133,12 @@ function formatBytes(num) {
   position: relative;
   overflow: hidden;
 }
-
 .refresh-button:hover:not(:disabled) {
-  background: #1E90FF;
+  background: #249980;
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
-
 .refresh-button:disabled {
   background: #d1d1d6;
   color: #fff;
@@ -5146,7 +5146,7 @@ function formatBytes(num) {
   transform: none;
   box-shadow: none;
 }
-
+/* [REMOVED] 与SVG图标相关的CSS规则已被删除 */
 .header h1 {
   color: #222;
   text-shadow: none;
@@ -5157,13 +5157,13 @@ function formatBytes(num) {
 .section-title {
   color: #222;
 }
-
 .container {
   max-width: 900px;
   margin: 0 auto;
   padding: 0 24px;
 }
-</style> 
+</style>
+
 --- 文件内容结束 (End of Content) ---
 
 --- 文件路径 (File Path): ./web/src/views/Detail.vue ---
@@ -5354,7 +5354,6 @@ const servicesStore = useServicesStore()
 const selectedService = computed(() => servicesStore.selectedService)
 
 let detailChart = null
-let refreshInterval = null
 const isRefreshing = ref(false)
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
 
@@ -5473,7 +5472,7 @@ const switchChartPeriod = async (period) => {
   const days = period === '7d' ? 7 : 30
   if (selectedService.value) {
     await servicesStore.loadServiceDetail(selectedService.value.id, days)
-    await createDetailChart()
+  await createDetailChart()
   }
 }
 
@@ -5488,107 +5487,107 @@ const createDetailChart = async () => {
       // 数据不存在，跳过
       return
     }
-    const ctx = document.getElementById('detail-chart')
-    if (ctx) {
-      if (detailChart) {
-        detailChart.destroy()
-      }
-      detailChart = new Chart(ctx, {
-        type: 'line',
-        data: {
+      const ctx = document.getElementById('detail-chart')
+      if (ctx) {
+        if (detailChart) {
+          detailChart.destroy()
+        }
+        detailChart = new Chart(ctx, {
+          type: 'line',
+          data: {
           labels: trafficData.dates,
-          datasets: [
-            {
-              label: '上传',
+            datasets: [
+              {
+                label: '上传',
               data: trafficData.upload_data,
-              borderColor: '#74b9ff',
-              backgroundColor: 'rgba(116, 185, 255, 0.1)',
-              tension: 0.4,
-              fill: true
-            },
-            {
-              label: '下载',
+                borderColor: '#74b9ff',
+                backgroundColor: 'rgba(116, 185, 255, 0.1)',
+                tension: 0.4,
+                fill: true
+              },
+              {
+                label: '下载',
               data: trafficData.download_data,
-              borderColor: '#00b894',
-              backgroundColor: 'rgba(0, 184, 148, 0.1)',
-              tension: 0.4,
-              fill: true
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              display: true,
-              position: 'top',
-              labels: {
-                color: '#2c3e50',
-                font: {
-                  size: 14,
-                  weight: 'bold'
-                }
+                borderColor: '#00b894',
+                backgroundColor: 'rgba(0, 184, 148, 0.1)',
+                tension: 0.4,
+                fill: true
               }
-            }
+            ]
           },
-          scales: {
-            x: {
-              display: true,
-              title: {
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
                 display: true,
-                text: '日期',
-                color: '#2c3e50',
-                font: {
-                  size: 14,
-                  weight: 'bold'
-                }
-              },
-              ticks: {
-                color: '#2c3e50',
-                font: {
-                  size: 12
-                }
-              },
-              grid: {
-                color: 'rgba(44, 62, 80, 0.1)'
-              }
-            },
-            y: {
-              display: true,
-              title: {
-                display: true,
-                text: '流量',
-                color: '#2c3e50',
-                font: {
-                  size: 14,
-                  weight: 'bold'
-                }
-              },
-              ticks: {
-                color: '#2c3e50',
-                font: {
-                  size: 12
-                },
-                callback: function(value, index, values) {
-                  if (value >= 1024 * 1024 * 1024) {
-                    return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-                  } else if (value >= 1024 * 1024) {
-                    return (value / (1024 * 1024)).toFixed(1) + ' MB';
-                  } else if (value >= 1024) {
-                    return (value / 1024).toFixed(1) + ' KB';
-                  } else {
-                    return value + ' B';
+                position: 'top',
+                labels: {
+                  color: '#2c3e50',
+                  font: {
+                    size: 14,
+                    weight: 'bold'
                   }
                 }
+              }
+            },
+            scales: {
+              x: {
+                display: true,
+                title: {
+                  display: true,
+                  text: '日期',
+                  color: '#2c3e50',
+                  font: {
+                    size: 14,
+                    weight: 'bold'
+                  }
+                },
+                ticks: {
+                  color: '#2c3e50',
+                  font: {
+                    size: 12
+                  }
+                },
+                grid: {
+                  color: 'rgba(44, 62, 80, 0.1)'
+                }
               },
-              grid: {
-                color: 'rgba(44, 62, 80, 0.1)'
+              y: {
+                display: true,
+                title: {
+                  display: true,
+                  text: '流量',
+                  color: '#2c3e50',
+                  font: {
+                    size: 14,
+                    weight: 'bold'
+                  }
+                },
+                ticks: {
+                  color: '#2c3e50',
+                  font: {
+                    size: 12
+                  },
+                  callback: function(value, index, values) {
+                    if (value >= 1024 * 1024 * 1024) {
+                      return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+                    } else if (value >= 1024 * 1024) {
+                      return (value / (1024 * 1024)).toFixed(1) + ' MB';
+                    } else if (value >= 1024) {
+                      return (value / 1024).toFixed(1) + ' KB';
+                    } else {
+                      return value + ' B';
+                    }
+                  }
+                },
+                grid: {
+                  color: 'rgba(44, 62, 80, 0.1)'
+                }
               }
             }
           }
-        }
-      })
+        })
     }
   } catch (error) {
     console.error('创建详情图表失败:', error)
@@ -5597,38 +5596,14 @@ const createDetailChart = async () => {
 
 const refreshDetail = async () => {
   if (selectedService.value && !isRefreshing.value) {
-    isRefreshing.value = true
+    isRefreshing.value = true;
     try {
-      const days = chartPeriod.value === '7d' ? 7 : 30
-      await servicesStore.loadServiceDetail(selectedService.value.id, days)
-      await createDetailChart()
-    } catch (error) {
-      console.error('刷新数据失败:', error)
+      const days = chartPeriod.value === '7d' ? 7 : 30;
+      await servicesStore.loadServiceDetail(selectedService.value.id, days, true);
+      await createDetailChart();
     } finally {
-      isRefreshing.value = false
+      isRefreshing.value = false;
     }
-  }
-}
-
-// 开始自动刷新
-const startAutoRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
-  refreshInterval = setInterval(async () => {
-    if (selectedService.value) {
-      const days = chartPeriod.value === '7d' ? 7 : 30
-      await servicesStore.loadServiceDetail(selectedService.value.id, days)
-      await createDetailChart()
-    }
-  }, 60000)
-}
-
-// 停止自动刷新
-const stopAutoRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-    refreshInterval = null
   }
 }
 
@@ -5668,24 +5643,18 @@ const sortedClients = computed(() => {
 });
 
 onMounted(async () => {
-  const serviceId = parseInt(route.params.serviceId)
-  
-  // 如果没有选中的服务，从主页获取
+  const serviceId = parseInt(route.params.serviceId);
   if (!selectedService.value || selectedService.value.id !== serviceId) {
-    // 这里需要从主页获取服务列表，然后选择对应的服务
     await servicesStore.loadServices()
     const service = servicesStore.services.find(s => s.id === serviceId)
     if (service) {
       servicesStore.selectService(service)
     }
   }
-  
-  // 加载服务详情
   if (selectedService.value) {
-    const days = chartPeriod.value === '7d' ? 7 : 30
-    await servicesStore.loadServiceDetail(serviceId, days)
-    await createDetailChart()
-    startAutoRefresh()
+    const days = chartPeriod.value === '7d' ? 7 : 30;
+    await servicesStore.loadServiceDetail(serviceId, days, false);
+    await createDetailChart();
   }
 })
 
@@ -5693,7 +5662,6 @@ onUnmounted(() => {
   if (detailChart) {
     detailChart.destroy()
   }
-  stopAutoRefresh()
 })
 </script>
 
@@ -5808,7 +5776,7 @@ onUnmounted(() => {
 }
 
 .refresh-button {
-  background: #70A1FF;
+  background: #4cbab4;
   color: #fff;
   border: none;
   padding: 10px 20px;
@@ -5823,7 +5791,7 @@ onUnmounted(() => {
 }
 
 .refresh-button:hover:not(:disabled) {
-  background: #1E90FF;
+  background: #249980;
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
@@ -8951,178 +8919,5 @@ func hy2SyncOnce(cfg *database.Hy2Config) {
 	logger.Infof("[HY2] 流量数据已成功推送到目标API")
 }
 
---- 文件内容结束 (End of Content) ---
-
---- 文件路径 (File Path): ./.github/workflows/release.yml ---
-
-name: Build and Release
-
-on:
-  push:
-    tags:
-      - 'v*'   # 只有推送 tag 时才触发
-
-permissions:
-  contents: write
-
-jobs:
-  build-and-release:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      # 后端 Go 构建
-      - name: 设置 Go 环境
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: 编译 Go 后端 (Linux amd64, 启用CGO)
-        run: |
-          cd backend
-          go mod tidy
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o xtrafficdash
-          mv xtrafficdash ../
-
-      # 前端 Vue 构建
-      - name: 设置 Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: 安装前端依赖并构建
-        run: |
-          cd web
-          npm ci
-          npm run build
-
-      - name: 打包前端 dist 目录
-        run: |
-          cd web
-          zip -r ../dist.zip dist
-
-      # 打包发布
-      # - name: 打包发布文件
-      #   run: |
-      #     mkdir release
-      #     cp xtrafficdash release/
-      #     cp -r web/dist release/web-dist
-
-      - name: 创建 Release 并上传资源
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            xtrafficdash
-            dist.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
---- 文件内容结束 (End of Content) ---
-
---- 文件路径 (File Path): ./.github/workflows/docker-build-push.yml ---
-
-# 工作流名称
-name: CI-CD - Build and Push Docker Image
-
-# 触发工作流的事件
-on:
-  push:
-    tags:
-      - 'v*'  # 只在推送 v 开头的标签时触发，如 v1.0.0, v2.1.3
-  workflow_dispatch: # 允许手动触发
-
-# 工作流执行的任务
-jobs:
-  build-and-push:
-    # 任务运行的环境
-    runs-on: ubuntu-latest
-
-    # 任务执行的步骤
-    steps:
-      # 步骤 1: 检出代码
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # 步骤 2: 登录到 Docker Hub
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # 步骤 3: 提取元数据（标签和注释）
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: docker.io/sanqi37/xtrafficdash
-          tags: |
-            # 使用 Git 标签作为 Docker 标签（去掉 v 前缀）
-            type=ref,event=tag
-            # 生成 latest 标签（仅对最新版本）
-            type=raw,value=latest,enable={{is_default_branch}}
-            # 生成 major 标签（如 v1.0.0 -> 1）
-            type=semver,pattern={{major}}
-            # 生成 major.minor 标签（如 v1.0.0 -> 1.0）
-            type=semver,pattern={{major}}.{{minor}}
-
-      # 步骤 4: 设置 Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 步骤 5: 构建并推送到 Docker Hub
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-
---- 文件内容结束 (End of Content) ---
-
---- 文件路径 (File Path): ./docker-compose.yml ---
-
-version: '3.8'
-
-services:
-  xtrafficdash:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: xtrafficdash
-    restart: unless-stopped
-    ports:
-      - "37022:37022"
-    environment:
-      - LISTEN_PORT=37022
-      - DATABASE_PATH=/app/data/xtrafficdash.db
-      - PASSWORD=${PASSWORD:-admin123}  
-      - DEBUG_MODE=${DEBUG_MODE:-false}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - TZ=Asia/Shanghai 
-    networks:
-      - xui_network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:37022/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-
-volumes:
-  xtrafficdash_data:
-    driver: local
-
-networks:
-  xtrafficdash_network:
-    driver: bridge 
 --- 文件内容结束 (End of Content) ---
 

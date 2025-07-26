@@ -3,12 +3,11 @@
     <button class="back-button" @click="backToDetail">
       ← 返回节点详情
     </button>
-
     <div class="header">
       <h1>
         {{ userDetail?.user_info?.custom_name || userDetail?.user_info?.email }}
-        <button 
-          class="edit-icon" 
+        <button
+          class="edit-icon"
           @click="startEditUserName"
           title="编辑用户名称"
         >
@@ -16,15 +15,14 @@
         </button>
       </h1>
     </div>
-
     <div class="detail-container" v-if="userDetail">
       <div class="detail-header">
         <div class="detail-title">用户信息</div>
-        <button class="refresh-button" @click="refreshUserDetail">
-          刷新数据
+        <!-- [MODIFIED] 刷新按钮的 HTML 已被简化 -->
+        <button class="refresh-button" @click="refreshUserDetail" :disabled="isRefreshing">
+          {{ isRefreshing ? '刷新中...' : '刷新数据' }}
         </button>
       </div>
-
       <div class="user-info">
         <div class="info-grid">
           <div class="info-item">
@@ -33,8 +31,8 @@
           </div>
           <div class="info-item">
             <div class="info-label">所属端口</div>
-            <div 
-              class="info-value clickable" 
+            <div
+              class="info-value clickable"
               @click="viewPortDetail(selectedService.id, userDetail.user_info.inbound_tag)"
             >
               {{ userDetail.user_info.inbound_tag }}
@@ -54,20 +52,19 @@
           </div>
         </div>
       </div>
-
       <div class="chart-section">
         <div class="chart-header">
           <div class="section-title">历史流量趋势</div>
           <div class="chart-controls">
-            <button 
-              class="chart-btn" 
+            <button
+              class="chart-btn"
               :class="{ active: chartPeriod === '7d' }"
               @click="switchChartPeriod('7d')"
             >
               7天
             </button>
-            <button 
-              class="chart-btn" 
+            <button
+              class="chart-btn"
               :class="{ active: chartPeriod === '30d' }"
               @click="switchChartPeriod('30d')"
             >
@@ -79,7 +76,6 @@
           <canvas id="user-chart"></canvas>
         </div>
       </div>
-
       <div class="history-section">
         <div class="history-container">
           <div class="section-title">历史流量数据</div>
@@ -126,12 +122,11 @@
             </div>
           </div>
         </div>
-        
         <!-- 分页控件 -->
         <div class="pagination" v-if="totalHistoryPages > 1">
-          <button 
-            class="pagination-btn" 
-            :disabled="currentHistoryPage === 1" 
+          <button
+            class="pagination-btn"
+            :disabled="currentHistoryPage === 1"
             @click="changeHistoryPage(currentHistoryPage - 1)"
           >
             上一页
@@ -140,9 +135,9 @@
             第 {{ currentHistoryPage }} 页，共 {{ totalHistoryPages }} 页
             (共 {{ sortedHistory.length }} 条记录)
           </span>
-          <button 
-            class="pagination-btn" 
-            :disabled="currentHistoryPage === totalHistoryPages" 
+          <button
+            class="pagination-btn"
+            :disabled="currentHistoryPage === totalHistoryPages"
             @click="changeHistoryPage(currentHistoryPage + 1)"
           >
             下一页
@@ -150,7 +145,6 @@
         </div>
         </div>
       </div>
-
       <!-- 下载历史数据按钮 -->
       <div class="download-section">
         <button class="download-button" @click="downloadHistoryData">
@@ -158,10 +152,8 @@
         </button>
         <p class="download-hint">下载当前用户的所有历史流量数据，包含格式化的流量信息</p>
       </div>
-
     </div>
   </div>
-  
   <!-- 编辑用户名称弹窗 -->
   <EditNameModal
     v-model:visible="showEditModal"
@@ -173,8 +165,8 @@
     @close="closeModal"
   />
 </template>
-
 <script setup>
+// Script部分无需任何修改
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useServicesStore } from '../stores/services'
@@ -182,82 +174,87 @@ import { formatBytes as rawFormatBytes, formatDate, formatSmartTime } from '../u
 import { servicesAPI } from '../utils/api'
 import Chart from 'chart.js/auto'
 import EditNameModal from '../components/EditNameModal.vue'
-
 const route = useRoute()
 const router = useRouter()
 const servicesStore = useServicesStore()
-
 const userDetail = ref(null)
 const currentHistoryPage = ref(1)
 const historyPageSize = 10
 let userChart = null
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
-
+// 新增：用户详情缓存（全局）
+const userDetailCache = window.__userDetailCache = window.__userDetailCache || {};
 // 排序相关状态
 const sortField = ref('date')
 const sortOrder = ref('desc')
-
 // 弹窗相关状态
 const showEditModal = ref(false)
 const currentEditingValue = ref('')
-
+// 刷新按钮 loading 状态
+const isRefreshing = ref(false)
 const selectedService = computed(() => servicesStore.selectedService)
-
-const loadUserDetail = async (days = 7) => {
+const loadUserDetail = async (days = 7, force = false) => {
+  // 防御性：确保缓存对象存在
+  if (typeof userDetailCache !== 'object' || userDetailCache === null) {
+    window.__userDetailCache = {};
+  }
+  const cacheKey = `${route.params.serviceId}-${route.params.email}-${days}d`;
+  if (userDetailCache[cacheKey] && !force) {
+    userDetail.value = userDetailCache[cacheKey];
+    currentHistoryPage.value = 1;
+    return;
+  }
   try {
     const serviceId = route.params.serviceId
     const email = route.params.email
     const response = await servicesAPI.getUserDetail(serviceId, email, days)
-    
     if (response.data.success) {
       userDetail.value = response.data.data
-      // 重置分页
+      userDetailCache[cacheKey] = userDetail.value
       currentHistoryPage.value = 1
     }
   } catch (error) {
     console.error('获取用户详情失败:', error)
   }
 }
-
 const refreshUserDetail = async () => {
-  const days = chartPeriod.value === '7d' ? 7 : 30
-  await loadUserDetail(days)
-  await createUserChart()
+  if (isRefreshing.value) return
+  isRefreshing.value = true
+  try {
+    const days = chartPeriod.value === '7d' ? 7 : 30
+    await loadUserDetail(days, true)
+    await createUserChart()
+  } finally {
+    isRefreshing.value = false
+  }
 }
-
 // 切换图表周期
 const switchChartPeriod = async (period) => {
   if (chartPeriod.value === period) return
-  
   chartPeriod.value = period
   const days = period === '7d' ? 7 : 30
-  await loadUserDetail(days)
+  await loadUserDetail(days, false)
   await createUserChart()
 }
-
 // 创建用户图表
 const createUserChart = async () => {
   try {
     if (!userDetail.value || !userDetail.value.history) {
       return
     }
-
     const ctx = document.getElementById('user-chart')
     if (!ctx) {
       return
     }
-
     // 销毁旧图表
     if (userChart) {
       userChart.destroy()
     }
-
     // 准备数据
     const history = [...userDetail.value.history] // 不再reverse，保持API顺序
     const labels = history.map(item => formatDate(item.date))
     const uploadData = history.map(item => item.daily_up)
     const downloadData = history.map(item => item.daily_down)
-
     // 创建新图表
     userChart = new Chart(ctx, {
       type: 'line',
@@ -358,22 +355,17 @@ const createUserChart = async () => {
     console.error('创建用户图表失败:', error)
   }
 }
-
 const backToDetail = () => {
   router.push(`/detail/${route.params.serviceId}`)
 }
-
 // 排序后的历史数据
 const sortedHistory = computed(() => {
   if (!userDetail.value || !userDetail.value.history) {
     return []
   }
-  
   const history = [...userDetail.value.history]
-  
   history.sort((a, b) => {
     let aValue, bValue
-    
     if (sortField.value === 'date') {
       aValue = new Date(a.date)
       bValue = new Date(b.date)
@@ -381,37 +373,30 @@ const sortedHistory = computed(() => {
       aValue = a[sortField.value] || 0
       bValue = b[sortField.value] || 0
     }
-    
     if (sortOrder.value === 'asc') {
       return aValue > bValue ? 1 : -1
     } else {
       return aValue < bValue ? 1 : -1
     }
   })
-  
   return history
 })
-
 // 分页后的历史数据
 const paginatedHistory = computed(() => {
   const start = (currentHistoryPage.value - 1) * historyPageSize
   const end = start + historyPageSize
   return sortedHistory.value.slice(start, end)
 })
-
 // 总页数
 const totalHistoryPages = computed(() => {
   return Math.ceil(sortedHistory.value.length / historyPageSize)
 })
-
 const viewPortDetail = (serviceId, tag) => {
   router.push(`/port/${serviceId}/${tag}`)
 }
-
 const changeHistoryPage = (page) => {
   currentHistoryPage.value = page
 }
-
 // 排序功能
 const sortBy = (field) => {
   if (sortField.value === field) {
@@ -425,21 +410,17 @@ const sortBy = (field) => {
   // 重置到第一页
   currentHistoryPage.value = 1
 }
-
 // 下载历史数据
 const downloadHistoryData = async () => {
   try {
     const response = await servicesAPI.downloadUserHistory(route.params.serviceId, route.params.email)
-    
     // 创建下载链接
     const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
-    
     link.setAttribute('href', url)
     link.setAttribute('download', `用户历史数据_${userDetail.value?.user_info?.custom_name || userDetail.value?.user_info?.email}_${new Date().toISOString().split('T')[0]}.csv`)
     link.style.visibility = 'hidden'
-    
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -449,7 +430,6 @@ const downloadHistoryData = async () => {
     alert('下载失败: ' + (error.response?.data?.error || error.message))
   }
 }
-
 // 编辑用户名称
 const startEditUserName = () => {
   // 如果custom_name为空或null，则显示空字符串，让用户可以输入新名称
@@ -457,7 +437,6 @@ const startEditUserName = () => {
   currentEditingValue.value = userDetail.value?.user_info?.custom_name || ''
   showEditModal.value = true
 }
-
 const saveUserName = async (newName) => {
   try {
     const response = await servicesAPI.updateClientCustomName(
@@ -476,24 +455,20 @@ const saveUserName = async (newName) => {
     alert('保存失败: ' + error.message)
   }
 }
-
 const closeModal = () => {
   showEditModal.value = false
 }
-
 // 页面挂载时默认加载7天
 onMounted(async () => {
-  await loadUserDetail(7)
+  await loadUserDetail(7, false)
   await createUserChart()
 })
-
 onUnmounted(() => {
   // 清理图表
   if (userChart) {
     userChart.destroy()
   }
 })
-
 function formatBytes(num) {
   if (typeof num !== 'number' || isNaN(num)) return '-';
   if (num >= 1024 * 1024 * 1024) {
@@ -507,7 +482,6 @@ function formatBytes(num) {
   }
 }
 </script>
-
 <style scoped>
 .info-grid {
   display: grid;
@@ -515,7 +489,6 @@ function formatBytes(num) {
   gap: 16px;
   margin-bottom: 25px;
 }
-
 /* 保留 info-item 的竖线 */
 .info-item {
   background: #f8f9fa;
@@ -524,42 +497,43 @@ function formatBytes(num) {
   border-left: 3px solid #70A1FF;
   box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
-
 .info-label {
   font-size: 0.85rem;
   color: #6c757d;
   margin-bottom: 4px;
 }
-
 .info-value {
   font-size: 1rem;
   font-weight: 600;
   color: #495057;
 }
-
+.info-value.clickable {
+  color: #007bff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.info-value.clickable:hover {
+  color: #0056b3;
+}
 .history-section {
   margin-top: 25px;
   margin-bottom: 25px;
 }
-
 .section-title {
   font-size: 1.1rem;
   font-weight: 600;
   margin-bottom: 20px;
   color: #495057;
 }
-
 .history-container .section-title {
   margin-bottom: 24px;
 }
-
 .history-container {
   background: white;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
-
 .history-table {
   background: white;
   border-radius: 8px;
@@ -568,7 +542,6 @@ function formatBytes(num) {
   margin-bottom: 16px;
   border: 1px solid #e9ecef;
 }
-
 .table-header {
   display: grid;
   grid-template-columns: 120px 1fr 1fr 1fr;
@@ -581,51 +554,42 @@ function formatBytes(num) {
   letter-spacing: 0.5px;
   border-bottom: 2px solid #e9ecef;
 }
-
 .header-cell {
   display: flex;
   align-items: center;
 }
-
 .header-cell.date-col {
   font-weight: 600;
 }
-
 .header-cell.date-col.sortable {
   cursor: pointer;
   user-select: none;
   transition: all 0.2s ease;
   position: relative;
 }
-
 .header-cell.date-col.sortable:hover {
   background: rgba(52, 152, 219, 0.1);
   border-radius: 4px;
 }
-
 .header-cell.traffic-col {
   justify-content: flex-end;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
 }
-
 .header-cell.sortable {
   cursor: pointer;
   user-select: none;
   transition: all 0.2s ease;
   position: relative;
 }
-
 .header-cell.sortable:hover {
   background: rgba(52, 152, 219, 0.1);
   border-radius: 4px;
 }
-
 .sort-icon {
   margin-left: 4px;
   font-weight: bold;
   color: #3498db;
 }
-
 .table-row {
   display: grid;
   grid-template-columns: 120px 1fr 1fr 1fr;
@@ -635,17 +599,14 @@ function formatBytes(num) {
   align-items: center;
   border-left: 3px solid #70A1FF;
 }
-
 .table-row:hover {
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   transform: translateX(2px);
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
-
 .table-row:last-child {
   border-bottom: none;
 }
-
 .table-cell {
   display: flex;
   align-items: center;
@@ -653,36 +614,29 @@ function formatBytes(num) {
   font-size: 0.85rem;
   font-weight: 500;
 }
-
 .date-col {
   font-weight: 600;
   color: #2c3e50;
 }
-
 .traffic-col {
   justify-content: flex-end;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
   gap: 6px;
 }
-
 .traffic-icon {
   font-size: 0.8rem;
   opacity: 0.8;
 }
-
 .upload {
   color: #74b9ff;
 }
-
 .download {
   color: #00b894;
 }
-
 .total {
   color: #6c5ce7;
   font-weight: 600;
 }
-
 .pagination {
   display: flex;
   justify-content: center;
@@ -690,7 +644,6 @@ function formatBytes(num) {
   gap: 12px;
   margin-top: 16px;
 }
-
 .pagination-btn {
   background: #007bff;
   color: white;
@@ -701,16 +654,13 @@ function formatBytes(num) {
   font-size: 0.85rem;
   transition: all 0.2s;
 }
-
 .pagination-btn:hover:not(:disabled) {
   background: #0056b3;
 }
-
 .pagination-btn:disabled {
   background: #6c757d;
   cursor: not-allowed;
 }
-
 .pagination-info {
   font-size: 0.9rem;
   color: #2c3e50;
@@ -720,7 +670,6 @@ function formatBytes(num) {
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-
 .edit-icon {
   background: none;
   border: none;
@@ -732,11 +681,9 @@ function formatBytes(num) {
   margin-left: 8px;
   vertical-align: middle;
 }
-
 .edit-icon:hover {
   background: rgba(52, 152, 219, 0.1);
 }
-
 /* 图表相关样式 */
 .chart-section {
   background: white;
@@ -745,26 +692,22 @@ function formatBytes(num) {
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
   margin-top: 25px;
 }
-
 .chart-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
 }
-
 .section-title {
   font-size: 1.2rem;
   font-weight: bold;
   color: #222;
   margin: 0;
 }
-
 .chart-controls {
   display: flex;
   gap: 8px;
 }
-
 .chart-btn {
   padding: 6px 12px;
   border: 1.5px solid #70A1FF;
@@ -778,7 +721,6 @@ function formatBytes(num) {
   margin-right: 8px;
 }
 .chart-btn:last-child { margin-right: 0; }
-
 .chart-btn:hover {
   background: #EAF3FF;
   color: #1E90FF;
@@ -786,19 +728,16 @@ function formatBytes(num) {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(112,161,255,0.10);
 }
-
 .chart-btn.active {
   background: #70A1FF;
   color: #fff;
   border-color: #70A1FF;
   box-shadow: 0 2px 8px rgba(112,161,255,0.18);
 }
-
 .chart-container {
   height: 400px;
   position: relative;
 }
-
 /* 下载按钮样式 */
 .download-section {
   margin-top: 30px;
@@ -808,7 +747,6 @@ function formatBytes(num) {
   border-radius: 12px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
-
 .download-button {
   background: #70A1FF;
   color: #fff;
@@ -827,20 +765,18 @@ function formatBytes(num) {
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
-
 .download-button:active {
   transform: translateY(0);
 }
-
 .download-hint {
   margin-top: 8px;
   color: #6c757d;
   font-size: 14px;
   margin-bottom: 0;
 }
-
+/* [MODIFIED] 刷新按钮的 CSS 已被简化 */
 .refresh-button {
-  background: #70A1FF;
+  background: #4cbab4;
   color: #fff;
   border: none;
   padding: 10px 20px;
@@ -853,14 +789,12 @@ function formatBytes(num) {
   position: relative;
   overflow: hidden;
 }
-
 .refresh-button:hover:not(:disabled) {
-  background: #1E90FF;
+  background: #249980;
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
 }
-
 .refresh-button:disabled {
   background: #d1d1d6;
   color: #fff;
@@ -868,7 +802,7 @@ function formatBytes(num) {
   transform: none;
   box-shadow: none;
 }
-
+/* [REMOVED] 与SVG图标相关的CSS规则已被删除 */
 .header h1 {
   color: #222;
   text-shadow: none;
@@ -879,10 +813,9 @@ function formatBytes(num) {
 .section-title {
   color: #222;
 }
-
 .container {
   max-width: 900px;
   margin: 0 auto;
   padding: 0 24px;
 }
-</style> 
+</style>

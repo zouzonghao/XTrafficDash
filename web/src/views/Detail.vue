@@ -184,7 +184,6 @@ const servicesStore = useServicesStore()
 const selectedService = computed(() => servicesStore.selectedService)
 
 let detailChart = null
-let refreshInterval = null
 const isRefreshing = ref(false)
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
 
@@ -303,7 +302,7 @@ const switchChartPeriod = async (period) => {
   const days = period === '7d' ? 7 : 30
   if (selectedService.value) {
     await servicesStore.loadServiceDetail(selectedService.value.id, days)
-    await createDetailChart()
+  await createDetailChart()
   }
 }
 
@@ -318,107 +317,107 @@ const createDetailChart = async () => {
       // 数据不存在，跳过
       return
     }
-    const ctx = document.getElementById('detail-chart')
-    if (ctx) {
-      if (detailChart) {
-        detailChart.destroy()
-      }
-      detailChart = new Chart(ctx, {
-        type: 'line',
-        data: {
+      const ctx = document.getElementById('detail-chart')
+      if (ctx) {
+        if (detailChart) {
+          detailChart.destroy()
+        }
+        detailChart = new Chart(ctx, {
+          type: 'line',
+          data: {
           labels: trafficData.dates,
-          datasets: [
-            {
-              label: '上传',
+            datasets: [
+              {
+                label: '上传',
               data: trafficData.upload_data,
-              borderColor: '#74b9ff',
-              backgroundColor: 'rgba(116, 185, 255, 0.1)',
-              tension: 0.4,
-              fill: true
-            },
-            {
-              label: '下载',
+                borderColor: '#74b9ff',
+                backgroundColor: 'rgba(116, 185, 255, 0.1)',
+                tension: 0.4,
+                fill: true
+              },
+              {
+                label: '下载',
               data: trafficData.download_data,
-              borderColor: '#00b894',
-              backgroundColor: 'rgba(0, 184, 148, 0.1)',
-              tension: 0.4,
-              fill: true
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              display: true,
-              position: 'top',
-              labels: {
-                color: '#2c3e50',
-                font: {
-                  size: 14,
-                  weight: 'bold'
-                }
+                borderColor: '#00b894',
+                backgroundColor: 'rgba(0, 184, 148, 0.1)',
+                tension: 0.4,
+                fill: true
               }
-            }
+            ]
           },
-          scales: {
-            x: {
-              display: true,
-              title: {
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
                 display: true,
-                text: '日期',
-                color: '#2c3e50',
-                font: {
-                  size: 14,
-                  weight: 'bold'
-                }
-              },
-              ticks: {
-                color: '#2c3e50',
-                font: {
-                  size: 12
-                }
-              },
-              grid: {
-                color: 'rgba(44, 62, 80, 0.1)'
-              }
-            },
-            y: {
-              display: true,
-              title: {
-                display: true,
-                text: '流量',
-                color: '#2c3e50',
-                font: {
-                  size: 14,
-                  weight: 'bold'
-                }
-              },
-              ticks: {
-                color: '#2c3e50',
-                font: {
-                  size: 12
-                },
-                callback: function(value, index, values) {
-                  if (value >= 1024 * 1024 * 1024) {
-                    return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-                  } else if (value >= 1024 * 1024) {
-                    return (value / (1024 * 1024)).toFixed(1) + ' MB';
-                  } else if (value >= 1024) {
-                    return (value / 1024).toFixed(1) + ' KB';
-                  } else {
-                    return value + ' B';
+                position: 'top',
+                labels: {
+                  color: '#2c3e50',
+                  font: {
+                    size: 14,
+                    weight: 'bold'
                   }
                 }
+              }
+            },
+            scales: {
+              x: {
+                display: true,
+                title: {
+                  display: true,
+                  text: '日期',
+                  color: '#2c3e50',
+                  font: {
+                    size: 14,
+                    weight: 'bold'
+                  }
+                },
+                ticks: {
+                  color: '#2c3e50',
+                  font: {
+                    size: 12
+                  }
+                },
+                grid: {
+                  color: 'rgba(44, 62, 80, 0.1)'
+                }
               },
-              grid: {
-                color: 'rgba(44, 62, 80, 0.1)'
+              y: {
+                display: true,
+                title: {
+                  display: true,
+                  text: '流量',
+                  color: '#2c3e50',
+                  font: {
+                    size: 14,
+                    weight: 'bold'
+                  }
+                },
+                ticks: {
+                  color: '#2c3e50',
+                  font: {
+                    size: 12
+                  },
+                  callback: function(value, index, values) {
+                    if (value >= 1024 * 1024 * 1024) {
+                      return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+                    } else if (value >= 1024 * 1024) {
+                      return (value / (1024 * 1024)).toFixed(1) + ' MB';
+                    } else if (value >= 1024) {
+                      return (value / 1024).toFixed(1) + ' KB';
+                    } else {
+                      return value + ' B';
+                    }
+                  }
+                },
+                grid: {
+                  color: 'rgba(44, 62, 80, 0.1)'
+                }
               }
             }
           }
-        }
-      })
+        })
     }
   } catch (error) {
     console.error('创建详情图表失败:', error)
@@ -427,38 +426,14 @@ const createDetailChart = async () => {
 
 const refreshDetail = async () => {
   if (selectedService.value && !isRefreshing.value) {
-    isRefreshing.value = true
+    isRefreshing.value = true;
     try {
-      const days = chartPeriod.value === '7d' ? 7 : 30
-      await servicesStore.loadServiceDetail(selectedService.value.id, days)
-      await createDetailChart()
-    } catch (error) {
-      console.error('刷新数据失败:', error)
+      const days = chartPeriod.value === '7d' ? 7 : 30;
+      await servicesStore.loadServiceDetail(selectedService.value.id, days, true);
+      await createDetailChart();
     } finally {
-      isRefreshing.value = false
+      isRefreshing.value = false;
     }
-  }
-}
-
-// 开始自动刷新
-const startAutoRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
-  refreshInterval = setInterval(async () => {
-    if (selectedService.value) {
-      const days = chartPeriod.value === '7d' ? 7 : 30
-      await servicesStore.loadServiceDetail(selectedService.value.id, days)
-      await createDetailChart()
-    }
-  }, 60000)
-}
-
-// 停止自动刷新
-const stopAutoRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-    refreshInterval = null
   }
 }
 
@@ -498,24 +473,18 @@ const sortedClients = computed(() => {
 });
 
 onMounted(async () => {
-  const serviceId = parseInt(route.params.serviceId)
-  
-  // 如果没有选中的服务，从主页获取
+  const serviceId = parseInt(route.params.serviceId);
   if (!selectedService.value || selectedService.value.id !== serviceId) {
-    // 这里需要从主页获取服务列表，然后选择对应的服务
     await servicesStore.loadServices()
     const service = servicesStore.services.find(s => s.id === serviceId)
     if (service) {
       servicesStore.selectService(service)
     }
   }
-  
-  // 加载服务详情
   if (selectedService.value) {
-    const days = chartPeriod.value === '7d' ? 7 : 30
-    await servicesStore.loadServiceDetail(serviceId, days)
-    await createDetailChart()
-    startAutoRefresh()
+    const days = chartPeriod.value === '7d' ? 7 : 30;
+    await servicesStore.loadServiceDetail(serviceId, days, false);
+    await createDetailChart();
   }
 })
 
@@ -523,7 +492,6 @@ onUnmounted(() => {
   if (detailChart) {
     detailChart.destroy()
   }
-  stopAutoRefresh()
 })
 </script>
 
@@ -638,7 +606,7 @@ onUnmounted(() => {
 }
 
 .refresh-button {
-  background: #70A1FF;
+  background: #4cbab4;
   color: #fff;
   border: none;
   padding: 10px 20px;
@@ -653,7 +621,7 @@ onUnmounted(() => {
 }
 
 .refresh-button:hover:not(:disabled) {
-  background: #1E90FF;
+  background: #249980;
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(112,161,255,0.18);
