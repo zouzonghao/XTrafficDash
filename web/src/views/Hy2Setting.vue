@@ -315,7 +315,7 @@ input[type="text"]:focus {
 }
 
 .save-button {
-  background: #6DC7A3;
+  background: #4cbab4;
   color: #fff;
   border: none;
   padding: 10px 26px;

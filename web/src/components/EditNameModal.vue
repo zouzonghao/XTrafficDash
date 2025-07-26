@@ -1,9 +1,9 @@
 <template>
-  <div v-if="visible" class="modal-overlay" @click="handleOverlayClick">
+  <div v-if="visible" class="modal-overlay" @click="isSaving || isSuccess ? null : handleOverlayClick()">
     <div class="modal-container" @click.stop>
       <div class="modal-header">
         <h3 class="modal-title">{{ title }}</h3>
-        <button class="modal-close" @click="handleClose">
+        <button class="modal-close" @click="handleClose" :disabled="isSaving">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -12,7 +12,19 @@
       </div>
       
       <div class="modal-body">
-        <div class="input-group">
+        <!-- 成功状态显示 -->
+        <div v-if="isSuccess" class="success-message">
+          <!-- <div class="success-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20,6 9,17 4,12"></polyline>
+            </svg>
+          </div> -->
+          <h4 class="success-title">修改成功！</h4>
+          <!-- <p class="success-text">名称已成功更新</p> -->
+        </div>
+        
+        <!-- 编辑表单 -->
+        <div v-else class="input-group">
           <label class="input-label">{{ label }}</label>
           <input 
             v-model="editingValue" 
@@ -21,16 +33,18 @@
             class="modal-input"
             ref="inputRef"
             :placeholder="placeholder"
+            :disabled="isSaving"
             type="text"
           />
         </div>
         
         <div class="modal-actions">
-          <button class="btn btn-secondary" @click="handleClose">
-            取消
+          <button class="btn btn-secondary" @click="handleClose" :disabled="isSaving">
+            {{ isSuccess ? '关闭' : '取消' }}
           </button>
-          <button class="btn btn-primary" @click="handleSave">
-            确认
+          <button v-if="!isSuccess" class="btn btn-primary" @click="handleSave" :disabled="isSaving">
+            <span v-if="isSaving">保存中...</span>
+            <span v-else>确认</span>
           </button>
         </div>
       </div>
@@ -68,10 +82,14 @@ const emit = defineEmits(['update:visible', 'save', 'close'])
 
 const editingValue = ref('')
 const inputRef = ref(null)
+const isSaving = ref(false) // 添加保存状态
+const isSuccess = ref(false) // 添加成功状态
 
 // 监听visible变化，当弹窗打开时设置初始值并聚焦
 watch(() => props.visible, (newVal) => {
   if (newVal) {
+    isSaving.value = false; // 打开时重置保存状态
+    isSuccess.value = false; // 打开时重置成功状态
     editingValue.value = props.value
     nextTick(() => {
       inputRef.value?.focus()
@@ -88,18 +106,34 @@ watch(() => props.value, (newVal) => {
 })
 
 const handleSave = () => {
+  if (isSaving.value) return;
+  isSaving.value = true;
   const trimmedValue = editingValue.value.trim()
-  // 允许保存空值，这样可以清空自定义名称
-  emit('save', trimmedValue)
-  emit('update:visible', false)
+  
+  const done = (success = true) => {
+    isSaving.value = false;
+    if (success) {
+      isSuccess.value = true;
+      // 2秒后自动关闭
+      setTimeout(() => {
+        emit('update:visible', false);
+      }, 2000);
+    } else {
+      emit('update:visible', false);
+    }
+  };
+
+  emit('save', trimmedValue, done);
 }
 
 const handleClose = () => {
+  if (isSaving.value) return;
   emit('close')
   emit('update:visible', false)
 }
 
 const handleOverlayClick = () => {
+  if (isSaving.value || isSuccess.value) return;
   handleClose()
 }
 </script>
@@ -159,13 +193,44 @@ const handleOverlayClick = () => {
   justify-content: center;
 }
 
-.modal-close:hover {
+.modal-close:hover:not(:disabled) {
   background: #f8f9fa;
   color: #2c3e50;
 }
 
+.modal-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .modal-body {
   padding: 24px;
+}
+
+/* 成功状态样式 */
+.success-message {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.success-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: #10b981;
+}
+
+.success-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #10b981;
+  margin: 0 0 8px 0;
+}
+
+.success-text {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
 }
 
 .input-group {
@@ -192,10 +257,16 @@ const handleOverlayClick = () => {
   box-sizing: border-box;
 }
 
-.modal-input:focus {
+.modal-input:focus:not(:disabled) {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.modal-input:disabled {
+  background: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
 }
 
 .modal-input::placeholder {
@@ -220,18 +291,19 @@ const handleOverlayClick = () => {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #4cbab4;
+  color: #fff;
 }
 
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px #4cbab4;
 }
 
 .btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  background: #4cbab4;
+  opacity: 0.8;
+  cursor: wait;
   transform: none;
   box-shadow: none;
 }
@@ -242,9 +314,16 @@ const handleOverlayClick = () => {
   border: 1px solid #e1e8ed;
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background: #e9ecef;
   border-color: #ced4da;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 @keyframes fadeIn {

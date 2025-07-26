@@ -177,7 +177,8 @@ const sortedServices = computed(() => {
 
 onMounted(async () => {
   await servicesStore.loadServices()
-  // 已移除: servicesStore.startAutoRefresh()
+  // 在首页数据加载后，开始后台预加载，不阻塞UI
+  servicesStore.preloadAllDetails()
 })
 
 onUnmounted(() => {

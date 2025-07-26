@@ -90,6 +90,7 @@ const props = defineProps({
 defineEmits(['select', 'delete'])
 
 let chart = null
+const servicesStore = useServicesStore() // 获取 store 实例
 
 // 弹窗相关状态
 const showEditModal = ref(false)
@@ -107,24 +108,20 @@ const openEditModal = () => {
 }
 
 // 保存名称
-const saveName = async (newName) => {
+const saveName = async (newName, done) => {
   try {
     const response = await servicesAPI.updateServiceCustomName(props.service.id, newName)
     if (response.data.success) {
-      // 更新本地数据
-      props.service.custom_name = newName
-      // 如果当前选中的服务就是这个服务，也要更新store中的数据
-      const servicesStore = useServicesStore()
-      if (servicesStore.selectedService && servicesStore.selectedService.id === props.service.id) {
-        servicesStore.selectedService.custom_name = newName
-      }
-      showEditModal.value = false
+      await servicesStore.forceRefreshAllData()
+      done(true); // 成功
     } else {
       alert('保存失败: ' + response.data.error)
+      done(false); // 失败
     }
   } catch (error) {
     console.error('保存名称失败:', error)
     alert('保存失败: ' + error.message)
+    done(false); // 失败
   }
 }
 

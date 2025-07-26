@@ -202,7 +202,7 @@ const startEditInbound = (inbound) => {
   showInboundModal.value = true
 }
 
-const saveInboundName = async (newName) => {
+const saveInboundName = async (newName, done) => {
   try {
     const response = await servicesAPI.updateInboundCustomName(
       selectedService.value.id, 
@@ -210,21 +210,17 @@ const saveInboundName = async (newName) => {
       newName
     )
     if (response.data.success) {
-      currentEditingInbound.value.custom_name = newName
-      // 同时更新selectedService中对应的端口数据
-      const inboundInService = selectedService.value.inbound_traffics.find(
-        i => i.tag === currentEditingInbound.value.tag
-      )
-      if (inboundInService) {
-        inboundInService.custom_name = newName
-      }
-      showInboundModal.value = false
+      await servicesStore.forceRefreshAllData()
+      await refreshDetail()
+      done(true); // 成功
     } else {
       alert('保存失败: ' + response.data.error)
+      done(false); // 失败
     }
   } catch (error) {
     console.error('保存入站失败:', error)
     alert('保存失败: ' + error.message)
+    done(false); // 失败
   }
 }
 
@@ -239,7 +235,7 @@ const startEditClient = (client) => {
   showClientModal.value = true
 }
 
-const saveClientName = async (newName) => {
+const saveClientName = async (newName, done) => {
   try {
     const response = await servicesAPI.updateClientCustomName(
       selectedService.value.id, 
@@ -247,21 +243,17 @@ const saveClientName = async (newName) => {
       newName
     )
     if (response.data.success) {
-      currentEditingClient.value.custom_name = newName
-      // 同时更新selectedService中对应的用户数据
-      const clientInService = selectedService.value.client_traffics.find(
-        c => c.email === currentEditingClient.value.email
-      )
-      if (clientInService) {
-        clientInService.custom_name = newName
-      }
-      showClientModal.value = false
+      await servicesStore.forceRefreshAllData()
+      await refreshDetail()
+      done(true); // 成功
     } else {
       alert('保存失败: ' + response.data.error)
+      done(false); // 失败
     }
   } catch (error) {
     console.error('保存用户名称失败:', error)
     alert('保存失败: ' + error.message)
+    done(false); // 失败
   }
 }
 
@@ -276,18 +268,21 @@ const startEditServiceName = () => {
   showServiceModal.value = true
 }
 
-const saveServiceName = async (newName) => {
+const saveServiceName = async (newName, done) => {
   try {
     const response = await servicesAPI.updateServiceCustomName(selectedService.value.id, newName)
     if (response.data.success) {
-      selectedService.value.custom_name = newName
-      showServiceModal.value = false
+      await servicesStore.forceRefreshAllData()
+      await refreshDetail()
+      done(true); // 成功
     } else {
       alert('保存失败: ' + response.data.error)
+      done(false); // 失败
     }
   } catch (error) {
     console.error('保存节点名称失败:', error)
     alert('保存失败: ' + error.message)
+    done(false); // 失败
   }
 }
 

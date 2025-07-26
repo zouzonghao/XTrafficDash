@@ -182,8 +182,8 @@ const currentHistoryPage = ref(1)
 const historyPageSize = 10
 let userChart = null
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
-// 新增：用户详情缓存（全局）
-const userDetailCache = window.__userDetailCache = window.__userDetailCache || {};
+// 移除：用户详情缓存（全局）
+// const userDetailCache = window.__userDetailCache = window.__userDetailCache || {};
 // 排序相关状态
 const sortField = ref('date')
 const sortOrder = ref('desc')
@@ -194,27 +194,12 @@ const currentEditingValue = ref('')
 const isRefreshing = ref(false)
 const selectedService = computed(() => servicesStore.selectedService)
 const loadUserDetail = async (days = 7, force = false) => {
-  // 防御性：确保缓存对象存在
-  if (typeof userDetailCache !== 'object' || userDetailCache === null) {
-    window.__userDetailCache = {};
-  }
-  const cacheKey = `${route.params.serviceId}-${route.params.email}-${days}d`;
-  if (userDetailCache[cacheKey] && !force) {
-    userDetail.value = userDetailCache[cacheKey];
-    currentHistoryPage.value = 1;
-    return;
-  }
-  try {
-    const serviceId = route.params.serviceId
-    const email = route.params.email
-    const response = await servicesAPI.getUserDetail(serviceId, email, days)
-    if (response.data.success) {
-      userDetail.value = response.data.data
-      userDetailCache[cacheKey] = userDetail.value
-      currentHistoryPage.value = 1
-    }
-  } catch (error) {
-    console.error('获取用户详情失败:', error)
+  const serviceId = parseInt(route.params.serviceId, 10);
+  const email = route.params.email;
+  const data = await servicesStore.getUserDetail(serviceId, email, days, force);
+  if (data) {
+    userDetail.value = data;
+    currentHistoryPage.value = 1; // 重置分页
   }
 }
 const refreshUserDetail = async () => {
@@ -437,7 +422,7 @@ const startEditUserName = () => {
   currentEditingValue.value = userDetail.value?.user_info?.custom_name || ''
   showEditModal.value = true
 }
-const saveUserName = async (newName) => {
+const saveUserName = async (newName, done) => {
   try {
     const response = await servicesAPI.updateClientCustomName(
       route.params.serviceId,
@@ -445,14 +430,17 @@ const saveUserName = async (newName) => {
       newName
     )
     if (response.data.success) {
-      userDetail.value.user_info.custom_name = newName
-      showEditModal.value = false
+      await servicesStore.forceRefreshAllData()
+      await refreshUserDetail()
+      done(true); // 成功
     } else {
       alert('保存失败: ' + response.data.error)
+      done(false); // 失败
     }
   } catch (error) {
     console.error('保存用户名称失败:', error)
     alert('保存失败: ' + error.message)
+    done(false); // 失败
   }
 }
 const closeModal = () => {

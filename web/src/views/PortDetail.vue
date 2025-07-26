@@ -177,8 +177,8 @@ const currentHistoryPage = ref(1)
 const historyPageSize = 10
 let portChart = null
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
-// 新增：端口详情缓存（全局）
-const portDetailCache = window.__portDetailCache = window.__portDetailCache || {};
+// 移除：端口详情缓存（全局）
+// const portDetailCache = window.__portDetailCache = window.__portDetailCache || {};
 // 排序相关状态
 const sortField = ref('date')
 const sortOrder = ref('desc')
@@ -222,27 +222,12 @@ const totalHistoryPages = computed(() => {
   return Math.ceil(sortedHistory.value.length / historyPageSize)
 })
 const loadPortDetail = async (days = 7, force = false) => {
-  // 防御性：确保缓存对象存在
-  if (typeof portDetailCache !== 'object' || portDetailCache === null) {
-    window.__portDetailCache = {};
-  }
-  const cacheKey = `${route.params.serviceId}-${route.params.tag}-${days}d`;
-  if (portDetailCache[cacheKey] && !force) {
-    portDetail.value = portDetailCache[cacheKey];
-    currentHistoryPage.value = 1;
-    return;
-  }
-  try {
-    const serviceId = route.params.serviceId
-    const tag = route.params.tag
-    const response = await servicesAPI.getPortDetail(serviceId, tag, days)
-    if (response.data.success) {
-      portDetail.value = response.data.data
-      portDetailCache[cacheKey] = portDetail.value
-      currentHistoryPage.value = 1
-    }
-  } catch (error) {
-    console.error('获取端口详情失败:', error)
+  const serviceId = parseInt(route.params.serviceId, 10);
+  const tag = route.params.tag;
+  const data = await servicesStore.getPortDetail(serviceId, tag, days, force);
+  if (data) {
+    portDetail.value = data;
+    currentHistoryPage.value = 1; // 重置分页
   }
 }
 const refreshPortDetail = async () => {
@@ -393,7 +378,7 @@ const startEditPortName = () => {
   currentEditingValue.value = portDetail.value?.port_info?.custom_name || ''
   showEditModal.value = true
 }
-const savePortName = async (newName) => {
+const savePortName = async (newName, done) => {
   try {
     const response = await servicesAPI.updateInboundCustomName(
       route.params.serviceId,
@@ -401,14 +386,17 @@ const savePortName = async (newName) => {
       newName
     )
     if (response.data.success) {
-      portDetail.value.port_info.custom_name = newName
-      showEditModal.value = false
+      await servicesStore.forceRefreshAllData()
+      await refreshPortDetail()
+      done(true); // 成功
     } else {
       alert('保存失败: ' + response.data.error)
+      done(false); // 失败
     }
   } catch (error) {
     console.error('保存入站失败:', error)
     alert('保存失败: ' + error.message)
+    done(false); // 失败
   }
 }
 const closeModal = () => {
